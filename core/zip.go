@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"archive/zip"
@@ -10,17 +10,18 @@ import (
 	"time"
 )
 
-func processJob(store *Store, job *Job) {
+func ProcessJob(store *Store, job *Job) {
 	store.mu.Lock()
 	job.Status = StatusProcessing
 	store.mu.Unlock()
+
 	log.Printf("job %s processing started", job.ID)
-	log.Printf("job %s delaying zip creation for %s", job.ID, processingDelay)
-	time.Sleep(processingDelay)
+	log.Printf("job %s delaying zip creation for %s", job.ID, ProcessingDelay)
+	time.Sleep(ProcessingDelay)
 	log.Printf("job %s delay finished, creating zip", job.ID)
 
 	filename := job.ID + ".zip"
-	outPath := filepath.Join(outputDir, filename)
+	outPath := filepath.Join(OutputDir, filename)
 
 	if err := createZip(outPath, job.Files); err != nil {
 		log.Printf("zip failed for job %s: %v", job.ID, err)

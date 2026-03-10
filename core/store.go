@@ -1,16 +1,10 @@
-package main
+package core
 
 import (
 	"sync"
 	"time"
-)
 
-const (
-	zipTTL          = 30 * time.Second
-	cleanupTick     = 5 * time.Second
-	processingDelay = 5 * time.Second
-	outputDir       = "./zips"
-	defaultPort     = "8080"
+	"github.com/google/uuid"
 )
 
 const (
@@ -36,6 +30,15 @@ type Store struct {
 
 func NewStore() *Store {
 	return &Store{jobs: make(map[string]*Job)}
+}
+
+func NewJob(files []string) *Job {
+	return &Job{
+		ID:        uuid.NewString(),
+		Status:    StatusPending,
+		ExpiresAt: time.Now().Add(ZipTTL),
+		Files:     files,
+	}
 }
 
 func (s *Store) Set(job *Job) {

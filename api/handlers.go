@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/jair/bulkdownload/core"
 )
 
 type ZipRequest struct {
@@ -22,7 +22,7 @@ type ZipResponse struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-func handleCreateZip(store *Store) http.HandlerFunc {
+func HandleCreateZip(store *core.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -46,27 +46,22 @@ func handleCreateZip(store *Store) http.HandlerFunc {
 			}
 		}
 
-		job := &Job{
-			ID:        uuid.NewString(),
-			Status:    StatusPending,
-			ExpiresAt: time.Now().Add(zipTTL),
-			Files:     req.Files,
-		}
+		job := core.NewJob(req.Files)
 		store.Set(job)
 		log.Printf("create: job %s accepted with %d files, expires at %s", job.ID, len(job.Files), job.ExpiresAt.Format(time.RFC3339))
 
-		go processJob(store, job)
+		go core.ProcessJob(store, job)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(ZipResponse{
+		_ = json.NewEncoder(w).Encode(ZipResponse{
 			ID:        job.ID,
 			ExpiresAt: job.ExpiresAt,
 		})
 	}
 }
 
-func handleStatus(store *Store) http.HandlerFunc {
+func HandleStatus(store *core.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/status/")
 		if id == "" {
@@ -83,11 +78,11 @@ func handleStatus(store *Store) http.HandlerFunc {
 		log.Printf("status: job %s is %s", id, job.Status)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(job)
+		_ = json.NewEncoder(w).Encode(job)
 	}
 }
 
-func handleDownload(store *Store) http.HandlerFunc {
+func HandleDownload(store *core.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/download/")
 		if id == "" {
@@ -101,13 +96,13 @@ func handleDownload(store *Store) http.HandlerFunc {
 			http.Error(w, "job not found", http.StatusNotFound)
 			return
 		}
-		if job.Status != StatusDone {
+		if job.Status != core.StatusDone {
 			log.Printf("download: job %s not ready, current status %s", id, job.Status)
 			http.Error(w, "zip is not ready yet", http.StatusConflict)
 			return
 		}
 
-		zipPath := filepath.Join(outputDir, job.Filename)
+		zipPath := filepath.Join(core.OutputDir, job.Filename)
 		log.Printf("download: serving job %s from %s", id, zipPath)
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, job.Filename))
 		http.ServeFile(w, r, zipPath)

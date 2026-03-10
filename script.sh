@@ -3,7 +3,7 @@ set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
 DOWNLOAD_DIR="${DOWNLOAD_DIR:-./downloads}"
-REQUEST_BODY='{"files":["test-files/alpha.txt","test-files/bravo.txt"]}'
+REQUEST_BODY='{"files":["testdata/alpha.txt","testdata/bravo.txt"]}'
 
 mkdir -p "$DOWNLOAD_DIR"
 

@@ -14,6 +14,8 @@ BulkDownload is a small Go service that bundles requested files into a zip and m
 go run .
 ```
 
+Copy `.env.example` to `.env` if you want to override timing settings locally.
+
 ## Example
 
 ```bash

@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"encoding/json"
@@ -9,26 +9,28 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jair/bulkdownload/core"
 )
 
 func TestHandleCreateZipReturnsExactMissingFileError(t *testing.T) {
-	store := NewStore()
-	req := httptest.NewRequest(http.MethodPost, "/zip", strings.NewReader(`{"files":["test-files/does-not-exist.txt"]}`))
+	store := core.NewStore()
+	req := httptest.NewRequest(http.MethodPost, "/zip", strings.NewReader(`{"files":["testdata/does-not-exist.txt"]}`))
 	rec := httptest.NewRecorder()
 
-	handleCreateZip(store).ServeHTTP(rec, req)
+	HandleCreateZip(store).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 	}
-	const wantBody = "file not found: test-files/does-not-exist.txt\n"
+	const wantBody = "file not found: testdata/does-not-exist.txt\n"
 	if rec.Body.String() != wantBody {
 		t.Fatalf("expected body %q, got %q", wantBody, rec.Body.String())
 	}
 }
 
 func TestHandleCreateZipAcceptsValidRequest(t *testing.T) {
-	store := NewStore()
+	store := core.NewStore()
 	tempDir := t.TempDir()
 	filePath := filepath.Join(tempDir, "alpha.txt")
 	if err := os.WriteFile(filePath, []byte("alpha contents"), 0o644); err != nil {
@@ -38,7 +40,7 @@ func TestHandleCreateZipAcceptsValidRequest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/zip", strings.NewReader(`{"files":["`+filePath+`"]}`))
 	rec := httptest.NewRecorder()
 
-	handleCreateZip(store).ServeHTTP(rec, req)
+	HandleCreateZip(store).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
@@ -62,7 +64,7 @@ func TestHandleCreateZipAcceptsValidRequest(t *testing.T) {
 	if len(job.Files) != 1 || job.Files[0] != filePath {
 		t.Fatalf("expected stored job files to contain %q, got %#v", filePath, job.Files)
 	}
-	if job.Status != StatusPending && job.Status != StatusProcessing {
+	if job.Status != core.StatusPending && job.Status != core.StatusProcessing {
 		t.Fatalf("expected stored job status to be pending or processing, got %q", job.Status)
 	}
 	if time.Until(got.ExpiresAt) <= 0 {
@@ -78,26 +80,26 @@ func TestHandleCreateZipAcceptsValidRequest(t *testing.T) {
 		store.Delete(got.ID)
 	}
 	if job.Filename != "" {
-		_ = os.Remove(filepath.Join(outputDir, job.Filename))
+		_ = os.Remove(filepath.Join(core.OutputDir, job.Filename))
 		store.Delete(got.ID)
 	}
 }
 
 func TestHandleStatusReturnsStoredJob(t *testing.T) {
-	store := NewStore()
-	job := &Job{ID: "job-123", Status: StatusProcessing, ExpiresAt: time.Now().Add(time.Minute)}
+	store := core.NewStore()
+	job := &core.Job{ID: "job-123", Status: core.StatusProcessing, ExpiresAt: time.Now().Add(time.Minute)}
 	store.Set(job)
 
 	req := httptest.NewRequest(http.MethodGet, "/status/"+job.ID, nil)
 	rec := httptest.NewRecorder()
 
-	handleStatus(store).ServeHTTP(rec, req)
+	HandleStatus(store).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 
-	var got Job
+	var got core.Job
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -110,13 +112,13 @@ func TestHandleStatusReturnsStoredJob(t *testing.T) {
 }
 
 func TestHandleDownloadServesFinishedZip(t *testing.T) {
-	store := NewStore()
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	store := core.NewStore()
+	if err := os.MkdirAll(core.OutputDir, 0o755); err != nil {
 		t.Fatalf("create output dir: %v", err)
 	}
 
 	filename := "download-test.zip"
-	zipPath := filepath.Join(outputDir, filename)
+	zipPath := filepath.Join(core.OutputDir, filename)
 	t.Cleanup(func() {
 		_ = os.Remove(zipPath)
 	})
@@ -125,9 +127,9 @@ func TestHandleDownloadServesFinishedZip(t *testing.T) {
 		t.Fatalf("write zip file: %v", err)
 	}
 
-	job := &Job{
+	job := &core.Job{
 		ID:        "job-done",
-		Status:    StatusDone,
+		Status:    core.StatusDone,
 		Filename:  filename,
 		ExpiresAt: time.Now().Add(time.Minute),
 	}
@@ -136,7 +138,7 @@ func TestHandleDownloadServesFinishedZip(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/download/"+job.ID, nil)
 	rec := httptest.NewRecorder()
 
-	handleDownload(store).ServeHTTP(rec, req)
+	HandleDownload(store).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
