@@ -6,12 +6,23 @@ import (
 )
 
 func TestLoadConfigUsesDefaultsWithoutEnv(t *testing.T) {
+	t.Cleanup(func() {
+		LoadConfig()
+	})
+	t.Setenv("OUTPUT_DIR", "")
+	t.Setenv("PORT", "")
 	t.Setenv("ZIP_TTL", "")
 	t.Setenv("CLEANUP_TICK", "")
 	t.Setenv("PROCESSING_DELAY", "")
 
 	LoadConfig()
 
+	if OutputDir != "./zips" {
+		t.Fatalf("expected default OutputDir, got %s", OutputDir)
+	}
+	if Port != "8080" {
+		t.Fatalf("expected default Port, got %s", Port)
+	}
 	if ZipTTL != 24*time.Hour {
 		t.Fatalf("expected default ZipTTL, got %s", ZipTTL)
 	}
@@ -24,12 +35,23 @@ func TestLoadConfigUsesDefaultsWithoutEnv(t *testing.T) {
 }
 
 func TestLoadConfigUsesEnvOverrides(t *testing.T) {
+	t.Cleanup(func() {
+		LoadConfig()
+	})
+	t.Setenv("OUTPUT_DIR", "/tmp/bulkdownload-test")
+	t.Setenv("PORT", "9090")
 	t.Setenv("ZIP_TTL", "30s")
 	t.Setenv("CLEANUP_TICK", "5s")
 	t.Setenv("PROCESSING_DELAY", "2s")
 
 	LoadConfig()
 
+	if OutputDir != "/tmp/bulkdownload-test" {
+		t.Fatalf("expected OutputDir override, got %s", OutputDir)
+	}
+	if Port != "9090" {
+		t.Fatalf("expected Port override, got %s", Port)
+	}
 	if ZipTTL != 30*time.Second {
 		t.Fatalf("expected ZipTTL override, got %s", ZipTTL)
 	}
@@ -42,12 +64,23 @@ func TestLoadConfigUsesEnvOverrides(t *testing.T) {
 }
 
 func TestLoadConfigFallsBackOnInvalidEnv(t *testing.T) {
+	t.Cleanup(func() {
+		LoadConfig()
+	})
+	t.Setenv("OUTPUT_DIR", "")
+	t.Setenv("PORT", "")
 	t.Setenv("ZIP_TTL", "nope")
 	t.Setenv("CLEANUP_TICK", "still-nope")
 	t.Setenv("PROCESSING_DELAY", "bad")
 
 	LoadConfig()
 
+	if OutputDir != "./zips" {
+		t.Fatalf("expected default OutputDir after invalid env, got %s", OutputDir)
+	}
+	if Port != "8080" {
+		t.Fatalf("expected default Port after invalid env, got %s", Port)
+	}
 	if ZipTTL != 24*time.Hour {
 		t.Fatalf("expected default ZipTTL after invalid env, got %s", ZipTTL)
 	}

@@ -24,12 +24,7 @@ func main() {
 	mux.HandleFunc("/status/", api.HandleStatus(store))
 	mux.HandleFunc("/download/", api.HandleDownload(store))
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = core.DefaultPort
-	}
-
-	log.Printf("config: zip_ttl=%s cleanup_tick=%s processing_delay=%s", core.ZipTTL, core.CleanupTick, core.ProcessingDelay)
-	log.Printf("bulk download service listening on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	log.Printf("config: output_dir=%s port=%s zip_ttl=%s cleanup_tick=%s processing_delay=%s", core.OutputDir, core.Port, core.ZipTTL, core.CleanupTick, core.ProcessingDelay)
+	log.Printf("bulk download service listening on :%s", core.Port)
+	log.Fatal(http.ListenAndServe(":"+core.Port, mux))
 }
