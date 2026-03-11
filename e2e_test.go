@@ -16,32 +16,30 @@ import (
 	"github.com/jair/bulkdownload/core"
 )
 
-func TestEndToEndZipLifecycle(t *testing.T) {
-	prevZipTTL := core.ZipTTL
-	prevCleanupTick := core.CleanupTick
-	prevProcessingDelay := core.ProcessingDelay
-	prevWD, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("get working directory: %v", err)
-	}
-	tempDir := t.TempDir()
+func useTestConfig(t *testing.T, zipTTL, cleanupTick, processingDelay time.Duration) string {
+	t.Helper()
 
-	core.ZipTTL = 3 * time.Second
-	core.CleanupTick = 500 * time.Millisecond
-	core.ProcessingDelay = 750 * time.Millisecond
+	t.Cleanup(func() {
+		core.LoadConfig()
+	})
 
-	if err := os.Chdir(tempDir); err != nil {
-		t.Fatalf("change working directory: %v", err)
-	}
+	outputDir := filepath.Join(t.TempDir(), "zips")
+	t.Setenv("OUTPUT_DIR", outputDir)
+	t.Setenv("ZIP_TTL", zipTTL.String())
+	t.Setenv("CLEANUP_TICK", cleanupTick.String())
+	t.Setenv("PROCESSING_DELAY", processingDelay.String())
+	core.LoadConfig()
+
 	if err := os.MkdirAll(core.OutputDir, 0o755); err != nil {
 		t.Fatalf("create output dir: %v", err)
 	}
-	t.Cleanup(func() {
-		core.ZipTTL = prevZipTTL
-		core.CleanupTick = prevCleanupTick
-		core.ProcessingDelay = prevProcessingDelay
-		_ = os.Chdir(prevWD)
-	})
+
+	return outputDir
+}
+
+func TestEndToEndZipLifecycle(t *testing.T) {
+	tempDir := t.TempDir()
+	useTestConfig(t, 3*time.Second, 500*time.Millisecond, 750*time.Millisecond)
 
 	alphaPath := filepath.Join(tempDir, "alpha.txt")
 	bravoPath := filepath.Join(tempDir, "bravo.txt")

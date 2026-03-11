@@ -13,6 +13,24 @@ import (
 	"github.com/jair/bulkdownload/core"
 )
 
+func useTestOutputDir(t *testing.T) string {
+	t.Helper()
+
+	t.Cleanup(func() {
+		core.LoadConfig()
+	})
+
+	outputDir := filepath.Join(t.TempDir(), "zips")
+	t.Setenv("OUTPUT_DIR", outputDir)
+	core.LoadConfig()
+
+	if err := os.MkdirAll(core.OutputDir, 0o755); err != nil {
+		t.Fatalf("create output dir: %v", err)
+	}
+
+	return outputDir
+}
+
 func TestHandleCreateZipReturnsExactMissingFileError(t *testing.T) {
 	store := core.NewStore()
 	req := httptest.NewRequest(http.MethodPost, "/zip", strings.NewReader(`{"files":["testdata/does-not-exist.txt"]}`))
@@ -31,6 +49,7 @@ func TestHandleCreateZipReturnsExactMissingFileError(t *testing.T) {
 
 func TestHandleCreateZipAcceptsValidRequest(t *testing.T) {
 	store := core.NewStore()
+	useTestOutputDir(t)
 	tempDir := t.TempDir()
 	filePath := filepath.Join(tempDir, "alpha.txt")
 	if err := os.WriteFile(filePath, []byte("alpha contents"), 0o644); err != nil {
@@ -76,13 +95,10 @@ func TestHandleCreateZipAcceptsValidRequest(t *testing.T) {
 	if job.Error != "" {
 		t.Fatalf("expected error to be empty, got %q", job.Error)
 	}
-	if job.Filename == "" {
-		store.Delete(got.ID)
-	}
 	if job.Filename != "" {
 		_ = os.Remove(filepath.Join(core.OutputDir, job.Filename))
-		store.Delete(got.ID)
 	}
+	store.Delete(got.ID)
 }
 
 func TestHandleStatusReturnsStoredJob(t *testing.T) {
@@ -113,12 +129,10 @@ func TestHandleStatusReturnsStoredJob(t *testing.T) {
 
 func TestHandleDownloadServesFinishedZip(t *testing.T) {
 	store := core.NewStore()
-	if err := os.MkdirAll(core.OutputDir, 0o755); err != nil {
-		t.Fatalf("create output dir: %v", err)
-	}
+	outputDir := useTestOutputDir(t)
 
 	filename := "download-test.zip"
-	zipPath := filepath.Join(core.OutputDir, filename)
+	zipPath := filepath.Join(outputDir, filename)
 	t.Cleanup(func() {
 		_ = os.Remove(zipPath)
 	})

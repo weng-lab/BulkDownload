@@ -2,39 +2,30 @@ package core
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
-func useTestRuntime(t *testing.T, zipTTL, cleanupTick, processingDelay time.Duration) {
+func useTestRuntime(t *testing.T, zipTTL, cleanupTick, processingDelay time.Duration) string {
 	t.Helper()
 
-	prevZipTTL := ZipTTL
-	prevCleanupTick := CleanupTick
-	prevProcessingDelay := ProcessingDelay
-	prevWD, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("get working directory: %v", err)
-	}
-	tempDir := t.TempDir()
+	t.Cleanup(func() {
+		LoadConfig()
+	})
 
-	ZipTTL = zipTTL
-	CleanupTick = cleanupTick
-	ProcessingDelay = processingDelay
+	outputDir := filepath.Join(t.TempDir(), "zips")
+	t.Setenv("OUTPUT_DIR", outputDir)
+	t.Setenv("ZIP_TTL", zipTTL.String())
+	t.Setenv("CLEANUP_TICK", cleanupTick.String())
+	t.Setenv("PROCESSING_DELAY", processingDelay.String())
+	LoadConfig()
 
-	if err := os.Chdir(tempDir); err != nil {
-		t.Fatalf("change working directory: %v", err)
-	}
 	if err := os.MkdirAll(OutputDir, 0o755); err != nil {
 		t.Fatalf("create output dir: %v", err)
 	}
 
-	t.Cleanup(func() {
-		ZipTTL = prevZipTTL
-		CleanupTick = prevCleanupTick
-		ProcessingDelay = prevProcessingDelay
-		_ = os.Chdir(prevWD)
-	})
+	return outputDir
 }
 
 func waitFor(t *testing.T, timeout, interval time.Duration, check func() bool, message string) {

@@ -8,11 +8,11 @@ import (
 )
 
 func TestStartCleanupRemovesExpiredJobsAndFiles(t *testing.T) {
-	useTestRuntime(t, 3*time.Second, 200*time.Millisecond, 0)
+	outputDir := useTestRuntime(t, 3*time.Second, 200*time.Millisecond, 0)
 
 	store := NewStore()
 	filename := "expired.zip"
-	zipPath := filepath.Join(OutputDir, filename)
+	zipPath := filepath.Join(outputDir, filename)
 	if err := os.WriteFile(zipPath, []byte("zip bytes"), 0o644); err != nil {
 		t.Fatalf("write zip file: %v", err)
 	}

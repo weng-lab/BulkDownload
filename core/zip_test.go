@@ -119,4 +119,9 @@ func TestProcessJobMarksFailureForMissingFile(t *testing.T) {
 	if job.Filename != "" {
 		t.Fatalf("expected failed job to have no filename, got %q", job.Filename)
 	}
+
+	zipPath := filepath.Join(OutputDir, job.ID+".zip")
+	if _, err := os.Stat(zipPath); !os.IsNotExist(err) {
+		t.Fatalf("expected failed job zip to be cleaned up, got err=%v", err)
+	}
 }
