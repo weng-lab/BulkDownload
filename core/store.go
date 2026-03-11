@@ -47,6 +47,48 @@ func (s *Store) Set(job *Job) {
 	s.jobs[job.ID] = job
 }
 
+func (s *Store) SetStatus(id, status string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	job, ok := s.jobs[id]
+	if !ok {
+		return false
+	}
+
+	job.Status = status
+	return true
+}
+
+func (s *Store) SetFailed(id string, err error) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	job, ok := s.jobs[id]
+	if !ok {
+		return false
+	}
+
+	job.Status = StatusFailed
+	job.Error = err.Error()
+	return true
+}
+
+func (s *Store) SetDone(id, filename string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	job, ok := s.jobs[id]
+	if !ok {
+		return false
+	}
+
+	job.Status = StatusDone
+	job.Filename = filename
+	job.Error = ""
+	return true
+}
+
 func (s *Store) Get(id string) (*Job, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

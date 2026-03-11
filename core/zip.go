@@ -11,9 +11,7 @@ import (
 )
 
 func ProcessJob(store *Store, job *Job) {
-	store.mu.Lock()
-	job.Status = StatusProcessing
-	store.mu.Unlock()
+	store.SetStatus(job.ID, StatusProcessing)
 
 	log.Printf("job %s processing started", job.ID)
 	log.Printf("job %s delaying zip creation for %s", job.ID, ProcessingDelay)
@@ -25,17 +23,14 @@ func ProcessJob(store *Store, job *Job) {
 
 	if err := createZip(outPath, job.Files); err != nil {
 		log.Printf("zip failed for job %s: %v", job.ID, err)
-		store.mu.Lock()
-		job.Status = StatusFailed
-		job.Error = err.Error()
-		store.mu.Unlock()
+		if removeErr := os.Remove(outPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Printf("cleanup failed zip for job %s: %v", job.ID, removeErr)
+		}
+		store.SetFailed(job.ID, err)
 		return
 	}
 
-	store.mu.Lock()
-	job.Status = StatusDone
-	job.Filename = filename
-	store.mu.Unlock()
+	store.SetDone(job.ID, filename)
 
 	log.Printf("job %s complete: %s", job.ID, outPath)
 }
