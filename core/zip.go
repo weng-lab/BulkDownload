@@ -19,7 +19,7 @@ func ProcessJob(store *Store, job *Job) {
 	log.Printf("job %s delay finished, creating zip", job.ID)
 
 	filename := job.ID + ".zip"
-	outPath := filepath.Join(OutputDir, filename)
+	outPath := filepath.Join(JobsDir, filename)
 
 	if err := createZip(outPath, job.Files); err != nil {
 		log.Printf("zip failed for job %s: %v", job.ID, err)

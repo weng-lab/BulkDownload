@@ -91,7 +91,7 @@ func TestProcessJobCreatesZipAndMarksDone(t *testing.T) {
 		return ok && got.Status == StatusDone && got.Filename != ""
 	}, "job to reach done")
 
-	zipPath := filepath.Join(OutputDir, job.Filename)
+	zipPath := filepath.Join(JobsDir, job.Filename)
 	if _, err := os.Stat(zipPath); err != nil {
 		t.Fatalf("expected zip file to exist: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestProcessJobMarksFailureForMissingFile(t *testing.T) {
 		t.Fatalf("expected failed job to have no filename, got %q", job.Filename)
 	}
 
-	zipPath := filepath.Join(OutputDir, job.ID+".zip")
+	zipPath := filepath.Join(JobsDir, job.ID+".zip")
 	if _, err := os.Stat(zipPath); !os.IsNotExist(err) {
 		t.Fatalf("expected failed job zip to be cleaned up, got err=%v", err)
 	}

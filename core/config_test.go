@@ -9,7 +9,9 @@ func TestLoadConfigUsesDefaultsWithoutEnv(t *testing.T) {
 	t.Cleanup(func() {
 		LoadConfig()
 	})
-	t.Setenv("OUTPUT_DIR", "")
+	t.Setenv("JOBS_DIR", "")
+	t.Setenv("PUBLIC_BASE_URL", "")
+	t.Setenv("DOWNLOAD_ROOT_DIR", "")
 	t.Setenv("PORT", "")
 	t.Setenv("ZIP_TTL", "")
 	t.Setenv("CLEANUP_TICK", "")
@@ -17,8 +19,14 @@ func TestLoadConfigUsesDefaultsWithoutEnv(t *testing.T) {
 
 	LoadConfig()
 
-	if OutputDir != "./zips" {
-		t.Fatalf("expected default OutputDir, got %s", OutputDir)
+	if JobsDir != "./jobs" {
+		t.Fatalf("expected default JobsDir, got %s", JobsDir)
+	}
+	if PublicBaseURL != "https://download.mohd.org" {
+		t.Fatalf("expected default PublicBaseURL, got %s", PublicBaseURL)
+	}
+	if DownloadRootDir != "mohd_data" {
+		t.Fatalf("expected default DownloadRootDir, got %s", DownloadRootDir)
 	}
 	if Port != "8080" {
 		t.Fatalf("expected default Port, got %s", Port)
@@ -38,7 +46,9 @@ func TestLoadConfigUsesEnvOverrides(t *testing.T) {
 	t.Cleanup(func() {
 		LoadConfig()
 	})
-	t.Setenv("OUTPUT_DIR", "/tmp/bulkdownload-test")
+	t.Setenv("JOBS_DIR", "/tmp/bulkdownload-jobs")
+	t.Setenv("PUBLIC_BASE_URL", "https://example.com/data")
+	t.Setenv("DOWNLOAD_ROOT_DIR", "custom-data")
 	t.Setenv("PORT", "9090")
 	t.Setenv("ZIP_TTL", "30s")
 	t.Setenv("CLEANUP_TICK", "5s")
@@ -46,8 +56,14 @@ func TestLoadConfigUsesEnvOverrides(t *testing.T) {
 
 	LoadConfig()
 
-	if OutputDir != "/tmp/bulkdownload-test" {
-		t.Fatalf("expected OutputDir override, got %s", OutputDir)
+	if JobsDir != "/tmp/bulkdownload-jobs" {
+		t.Fatalf("expected JobsDir override, got %s", JobsDir)
+	}
+	if PublicBaseURL != "https://example.com/data" {
+		t.Fatalf("expected PublicBaseURL override, got %s", PublicBaseURL)
+	}
+	if DownloadRootDir != "custom-data" {
+		t.Fatalf("expected DownloadRootDir override, got %s", DownloadRootDir)
 	}
 	if Port != "9090" {
 		t.Fatalf("expected Port override, got %s", Port)
@@ -67,7 +83,9 @@ func TestLoadConfigFallsBackOnInvalidEnv(t *testing.T) {
 	t.Cleanup(func() {
 		LoadConfig()
 	})
-	t.Setenv("OUTPUT_DIR", "")
+	t.Setenv("JOBS_DIR", "")
+	t.Setenv("PUBLIC_BASE_URL", "")
+	t.Setenv("DOWNLOAD_ROOT_DIR", "")
 	t.Setenv("PORT", "")
 	t.Setenv("ZIP_TTL", "nope")
 	t.Setenv("CLEANUP_TICK", "still-nope")
@@ -75,8 +93,14 @@ func TestLoadConfigFallsBackOnInvalidEnv(t *testing.T) {
 
 	LoadConfig()
 
-	if OutputDir != "./zips" {
-		t.Fatalf("expected default OutputDir after invalid env, got %s", OutputDir)
+	if JobsDir != "./jobs" {
+		t.Fatalf("expected default JobsDir after invalid env, got %s", JobsDir)
+	}
+	if PublicBaseURL != "https://download.mohd.org" {
+		t.Fatalf("expected default PublicBaseURL after invalid env, got %s", PublicBaseURL)
+	}
+	if DownloadRootDir != "mohd_data" {
+		t.Fatalf("expected default DownloadRootDir after invalid env, got %s", DownloadRootDir)
 	}
 	if Port != "8080" {
 		t.Fatalf("expected default Port after invalid env, got %s", Port)

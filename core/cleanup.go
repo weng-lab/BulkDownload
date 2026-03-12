@@ -20,7 +20,7 @@ func StartCleanup(store *Store) {
 
 			for _, job := range expired {
 				if job.Filename != "" {
-					path := filepath.Join(OutputDir, job.Filename)
+					path := filepath.Join(JobsDir, job.Filename)
 					if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 						log.Printf("cleanup: failed to remove %s: %v", path, err)
 					} else {
