@@ -62,6 +62,45 @@ func HandleCreateZip(store *core.Store) http.HandlerFunc {
 	}
 }
 
+func HandleCreateTarball(store *core.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req JobRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if len(req.Files) == 0 {
+			http.Error(w, "files list is empty", http.StatusBadRequest)
+			return
+		}
+
+		for _, f := range req.Files {
+			if _, err := os.Stat(f); err != nil {
+				http.Error(w, fmt.Sprintf("file not found: %s", f), http.StatusBadRequest)
+				return
+			}
+		}
+
+		job := core.NewJob(req.Files)
+		store.Set(job)
+		log.Printf("tarball create: job %s accepted with %d files, expires at %s", job.ID, len(job.Files), job.ExpiresAt.Format(time.RFC3339))
+
+		go core.ProcessTarballJob(store, job)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(JobResponse{
+			ID:        job.ID,
+			ExpiresAt: job.ExpiresAt,
+		})
+	}
+}
+
 func HandleCreateScript(store *core.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -141,7 +180,7 @@ func HandleDownload(store *core.Store) http.HandlerFunc {
 		}
 		if job.Status != core.StatusDone {
 			log.Printf("download: job %s not ready, current status %s", id, job.Status)
-			http.Error(w, "zip is not ready yet", http.StatusConflict)
+			http.Error(w, "download is not ready yet", http.StatusConflict)
 			return
 		}
 

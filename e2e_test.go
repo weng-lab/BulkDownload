@@ -1,7 +1,9 @@
 package main
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -56,6 +58,7 @@ func TestEndToEndZipLifecycle(t *testing.T) {
 	core.StartCleanup(store)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/zip", api.HandleCreateZip(store))
+	mux.HandleFunc("/tarball", api.HandleCreateTarball(store))
 	mux.HandleFunc("/script", api.HandleCreateScript(store))
 	mux.HandleFunc("/status/", api.HandleStatus(store))
 	mux.HandleFunc("/download/", api.HandleDownload(store))
@@ -141,6 +144,128 @@ func TestEndToEndZipLifecycle(t *testing.T) {
 	t.Fatalf("timed out waiting for job completion")
 }
 
+func TestEndToEndTarballLifecycle(t *testing.T) {
+	tempDir := t.TempDir()
+	useTestConfig(t, 3*time.Second, 500*time.Millisecond, 750*time.Millisecond)
+
+	alphaPath := filepath.Join(tempDir, "alpha.txt")
+	bravoPath := filepath.Join(tempDir, "bravo.txt")
+	if err := os.WriteFile(alphaPath, []byte("alpha contents"), 0o644); err != nil {
+		t.Fatalf("write alpha file: %v", err)
+	}
+	if err := os.WriteFile(bravoPath, []byte("bravo contents"), 0o644); err != nil {
+		t.Fatalf("write bravo file: %v", err)
+	}
+
+	store := core.NewStore()
+	core.StartCleanup(store)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/zip", api.HandleCreateZip(store))
+	mux.HandleFunc("/tarball", api.HandleCreateTarball(store))
+	mux.HandleFunc("/script", api.HandleCreateScript(store))
+	mux.HandleFunc("/status/", api.HandleStatus(store))
+	mux.HandleFunc("/download/", api.HandleDownload(store))
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	createResp, err := http.Post(server.URL+"/tarball", "application/json", strings.NewReader(`{"files":["`+alphaPath+`","`+bravoPath+`"]}`))
+	if err != nil {
+		t.Fatalf("create tarball request: %v", err)
+	}
+	defer createResp.Body.Close()
+
+	if createResp.StatusCode != http.StatusAccepted {
+		body, _ := io.ReadAll(createResp.Body)
+		t.Fatalf("expected create status %d, got %d: %s", http.StatusAccepted, createResp.StatusCode, string(body))
+	}
+
+	var created api.JobResponse
+	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	observedIntermediate := false
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		statusResp, err := http.Get(server.URL + "/status/" + created.ID)
+		if err != nil {
+			t.Fatalf("get status: %v", err)
+		}
+
+		var job core.Job
+		if err := json.NewDecoder(statusResp.Body).Decode(&job); err != nil {
+			statusResp.Body.Close()
+			t.Fatalf("decode status response: %v", err)
+		}
+		statusResp.Body.Close()
+
+		if job.Status == core.StatusPending || job.Status == core.StatusProcessing {
+			observedIntermediate = true
+		}
+		if job.Status == core.StatusDone {
+			if !observedIntermediate {
+				t.Fatalf("expected to observe pending or processing before done")
+			}
+
+			downloadResp, err := http.Get(server.URL + "/download/" + created.ID)
+			if err != nil {
+				t.Fatalf("download tarball: %v", err)
+			}
+			defer downloadResp.Body.Close()
+
+			if downloadResp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(downloadResp.Body)
+				t.Fatalf("expected download status %d, got %d: %s", http.StatusOK, downloadResp.StatusCode, string(body))
+			}
+
+			archivePath := filepath.Join(tempDir, "downloaded.tar.gz")
+			archiveData, err := io.ReadAll(downloadResp.Body)
+			if err != nil {
+				t.Fatalf("read download response: %v", err)
+			}
+			if err := os.WriteFile(archivePath, archiveData, 0o644); err != nil {
+				t.Fatalf("write downloaded archive: %v", err)
+			}
+
+			archiveFile, err := os.Open(archivePath)
+			if err != nil {
+				t.Fatalf("open downloaded archive: %v", err)
+			}
+			defer archiveFile.Close()
+
+			gzReader, err := gzip.NewReader(archiveFile)
+			if err != nil {
+				t.Fatalf("open gzip reader: %v", err)
+			}
+			defer gzReader.Close()
+
+			tarReader := tar.NewReader(gzReader)
+			entryCount := 0
+			for {
+				_, err := tarReader.Next()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatalf("read tar entry: %v", err)
+				}
+				entryCount++
+			}
+
+			if entryCount != 2 {
+				t.Fatalf("expected 2 files in archive, got %d", entryCount)
+			}
+
+			return
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for job completion")
+}
+
 func TestEndToEndScriptLifecycle(t *testing.T) {
 	useTestConfig(t, 3*time.Second, 500*time.Millisecond, 250*time.Millisecond)
 
@@ -148,6 +273,7 @@ func TestEndToEndScriptLifecycle(t *testing.T) {
 	core.StartCleanup(store)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/zip", api.HandleCreateZip(store))
+	mux.HandleFunc("/tarball", api.HandleCreateTarball(store))
 	mux.HandleFunc("/script", api.HandleCreateScript(store))
 	mux.HandleFunc("/status/", api.HandleStatus(store))
 	mux.HandleFunc("/download/", api.HandleDownload(store))

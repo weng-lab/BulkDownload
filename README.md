@@ -41,18 +41,36 @@ bash scripts/fs.sh
 bash scripts/request.sh
 ```
 
-`scripts/request.sh` returns JSON with a job id. Once the job is done, run:
+To try archive jobs instead:
+
+```bash
+bash scripts/request-zip.sh
+```
+
+```bash
+bash scripts/request-tarball.sh
+```
+
+Those default to the repo's `testdata/alpha.txt` and `testdata/bravo.txt`, but you can still pass explicit absolute paths as arguments.
+
+Each request script returns JSON with a job id. Once a script job is done, run:
 
 ```bash
 bash scripts/download.sh <job-id>
 ```
 
-This fetches `http://localhost:9000/scripts/<job-id>.sh` and runs it, downloading the requested files into `./mohd_data/`.
+This fetches `${PUBLIC_BASE_URL}/jobs/<job-id>.sh` and runs it, downloading the requested files into `./mohd_data/`.
 
 ## Example
 
 ```bash
 curl -X POST http://localhost:8080/zip \
+  -H "Content-Type: application/json" \
+  -d '{"files":["/absolute/path/to/file1.txt","/absolute/path/to/file2.txt"]}'
+```
+
+```bash
+curl -X POST http://localhost:8080/tarball \
   -H "Content-Type: application/json" \
   -d '{"files":["/absolute/path/to/file1.txt","/absolute/path/to/file2.txt"]}'
 ```

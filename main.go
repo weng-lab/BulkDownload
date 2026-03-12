@@ -21,6 +21,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/zip", api.HandleCreateZip(store))
+	mux.HandleFunc("/tarball", api.HandleCreateTarball(store))
 	mux.HandleFunc("/script", api.HandleCreateScript(store))
 	mux.HandleFunc("/status/", api.HandleStatus(store))
 	mux.HandleFunc("/download/", api.HandleDownload(store))

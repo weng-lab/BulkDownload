@@ -1,7 +1,8 @@
 package core
 
 import (
-	"archive/zip"
+	"archive/tar"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"log"
@@ -10,19 +11,19 @@ import (
 	"time"
 )
 
-func ProcessJob(store *Store, job *Job) {
+func ProcessTarballJob(store *Store, job *Job) {
 	store.SetStatus(job.ID, StatusProcessing)
 
-	log.Printf("job %s processing started", job.ID)
+	log.Printf("job %s tarball processing started", job.ID)
 	time.Sleep(ProcessingDelay)
 
-	filename := job.ID + ".zip"
+	filename := job.ID + ".tar.gz"
 	outPath := filepath.Join(JobsDir, filename)
 
-	if err := createZip(outPath, job.Files); err != nil {
-		log.Printf("zip failed for job %s: %v", job.ID, err)
+	if err := createTarball(outPath, job.Files); err != nil {
+		log.Printf("tarball failed for job %s: %v", job.ID, err)
 		if removeErr := os.Remove(outPath); removeErr != nil && !os.IsNotExist(removeErr) {
-			log.Printf("cleanup failed zip for job %s: %v", job.ID, removeErr)
+			log.Printf("cleanup failed tarball for job %s: %v", job.ID, removeErr)
 		}
 		store.SetFailed(job.ID, err)
 		return
@@ -33,18 +34,21 @@ func ProcessJob(store *Store, job *Job) {
 	log.Printf("job %s complete: %s", job.ID, outPath)
 }
 
-func createZip(dest string, files []string) error {
+func createTarball(dest string, files []string) error {
 	f, err := os.Create(dest)
 	if err != nil {
-		return fmt.Errorf("create zip file: %w", err)
+		return fmt.Errorf("create tarball file: %w", err)
 	}
 	defer f.Close()
 
-	zw := zip.NewWriter(f)
-	defer zw.Close()
+	gzw := gzip.NewWriter(f)
+	defer gzw.Close()
+
+	tw := tar.NewWriter(gzw)
+	defer tw.Close()
 
 	for _, path := range files {
-		if err := addFileToZip(zw, path); err != nil {
+		if err := addFileToTarball(tw, path); err != nil {
 			return fmt.Errorf("add %s: %w", path, err)
 		}
 	}
@@ -52,7 +56,7 @@ func createZip(dest string, files []string) error {
 	return nil
 }
 
-func addFileToZip(zw *zip.Writer, path string) error {
+func addFileToTarball(tw *tar.Writer, path string) error {
 	src, err := os.Open(path)
 	if err != nil {
 		return err
@@ -64,18 +68,16 @@ func addFileToZip(zw *zip.Writer, path string) error {
 		return err
 	}
 
-	header, err := zip.FileInfoHeader(info)
+	header, err := tar.FileInfoHeader(info, "")
 	if err != nil {
 		return err
 	}
 	header.Name = filepath.Base(path)
-	header.Method = zip.Deflate
 
-	w, err := zw.CreateHeader(header)
-	if err != nil {
+	if err := tw.WriteHeader(header); err != nil {
 		return err
 	}
 
-	_, err = io.Copy(w, src)
+	_, err = io.Copy(tw, src)
 	return err
 }
