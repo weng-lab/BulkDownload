@@ -12,8 +12,8 @@ import (
 func main() {
 	core.LoadConfig()
 
-	if err := os.MkdirAll(core.OutputDir, 0o755); err != nil {
-		log.Fatalf("failed to create output dir: %v", err)
+	if err := os.MkdirAll(core.JobsDir, 0o755); err != nil {
+		log.Fatalf("failed to create jobs dir: %v", err)
 	}
 
 	store := core.NewStore()
@@ -21,10 +21,11 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/zip", api.HandleCreateZip(store))
+	mux.HandleFunc("/script", api.HandleCreateScript(store))
 	mux.HandleFunc("/status/", api.HandleStatus(store))
 	mux.HandleFunc("/download/", api.HandleDownload(store))
 
-	log.Printf("config: output_dir=%s port=%s zip_ttl=%s cleanup_tick=%s processing_delay=%s", core.OutputDir, core.Port, core.ZipTTL, core.CleanupTick, core.ProcessingDelay)
+	log.Printf("config: jobs_dir=%s public_base_url=%s download_root_dir=%s port=%s zip_ttl=%s cleanup_tick=%s processing_delay=%s", core.JobsDir, core.PublicBaseURL, core.DownloadRootDir, core.Port, core.ZipTTL, core.CleanupTick, core.ProcessingDelay)
 	log.Printf("bulk download service listening on :%s", core.Port)
 	log.Fatal(http.ListenAndServe(":"+core.Port, mux))
 }

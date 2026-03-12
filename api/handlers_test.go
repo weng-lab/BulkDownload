@@ -13,22 +13,24 @@ import (
 	"github.com/jair/bulkdownload/core"
 )
 
-func useTestOutputDir(t *testing.T) string {
+func useTestJobsDir(t *testing.T) string {
 	t.Helper()
 
 	t.Cleanup(func() {
 		core.LoadConfig()
 	})
 
-	outputDir := filepath.Join(t.TempDir(), "zips")
-	t.Setenv("OUTPUT_DIR", outputDir)
+	jobsDir := filepath.Join(t.TempDir(), "jobs")
+	t.Setenv("JOBS_DIR", jobsDir)
+	t.Setenv("PUBLIC_BASE_URL", "https://download.mohd.org")
+	t.Setenv("DOWNLOAD_ROOT_DIR", "mohd_data")
 	core.LoadConfig()
 
-	if err := os.MkdirAll(core.OutputDir, 0o755); err != nil {
-		t.Fatalf("create output dir: %v", err)
+	if err := os.MkdirAll(core.JobsDir, 0o755); err != nil {
+		t.Fatalf("create jobs dir: %v", err)
 	}
 
-	return outputDir
+	return jobsDir
 }
 
 func TestHandleCreateZipReturnsExactMissingFileError(t *testing.T) {
@@ -49,7 +51,7 @@ func TestHandleCreateZipReturnsExactMissingFileError(t *testing.T) {
 
 func TestHandleCreateZipAcceptsValidRequest(t *testing.T) {
 	store := core.NewStore()
-	useTestOutputDir(t)
+	useTestJobsDir(t)
 	tempDir := t.TempDir()
 	filePath := filepath.Join(tempDir, "alpha.txt")
 	if err := os.WriteFile(filePath, []byte("alpha contents"), 0o644); err != nil {
@@ -65,7 +67,7 @@ func TestHandleCreateZipAcceptsValidRequest(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
 	}
 
-	var got ZipResponse
+	var got JobResponse
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -96,7 +98,7 @@ func TestHandleCreateZipAcceptsValidRequest(t *testing.T) {
 		t.Fatalf("expected error to be empty, got %q", job.Error)
 	}
 	if job.Filename != "" {
-		_ = os.Remove(filepath.Join(core.OutputDir, job.Filename))
+		_ = os.Remove(filepath.Join(core.JobsDir, job.Filename))
 	}
 	store.Delete(got.ID)
 }
@@ -129,10 +131,10 @@ func TestHandleStatusReturnsStoredJob(t *testing.T) {
 
 func TestHandleDownloadServesFinishedZip(t *testing.T) {
 	store := core.NewStore()
-	outputDir := useTestOutputDir(t)
+	jobsDir := useTestJobsDir(t)
 
 	filename := "download-test.zip"
-	zipPath := filepath.Join(outputDir, filename)
+	zipPath := filepath.Join(jobsDir, filename)
 	t.Cleanup(func() {
 		_ = os.Remove(zipPath)
 	})
@@ -164,4 +166,79 @@ func TestHandleDownloadServesFinishedZip(t *testing.T) {
 	if rec.Body.String() != "zip bytes" {
 		t.Fatalf("expected response body %q, got %q", "zip bytes", rec.Body.String())
 	}
+}
+
+func TestHandleCreateScriptAcceptsValidRequest(t *testing.T) {
+	store := core.NewStore()
+	jobsDir := useTestJobsDir(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/script", strings.NewReader(`{"files":["rna/accession.bigwig","rna/second.bigwig"]}`))
+	rec := httptest.NewRecorder()
+
+	HandleCreateScript(store).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
+	}
+
+	var got JobResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	job, ok := store.Get(got.ID)
+	if !ok {
+		t.Fatalf("expected job %q to be stored", got.ID)
+	}
+	if len(job.Files) != 2 || job.Files[0] != "rna/accession.bigwig" || job.Files[1] != "rna/second.bigwig" {
+		t.Fatalf("expected normalized relative paths to be stored, got %#v", job.Files)
+	}
+
+	waitForScriptJobDone(t, store, got.ID)
+
+	job, _ = store.Get(got.ID)
+	if job.Filename == "" {
+		t.Fatalf("expected script filename to be set")
+	}
+	if _, err := os.Stat(filepath.Join(jobsDir, job.Filename)); err != nil {
+		t.Fatalf("expected generated script to exist: %v", err)
+	}
+	if time.Until(got.ExpiresAt) <= 0 {
+		t.Fatalf("expected expires_at to be in the future")
+	}
+
+	store.Delete(got.ID)
+}
+
+func TestHandleCreateScriptRejectsUnsafePath(t *testing.T) {
+	store := core.NewStore()
+	useTestJobsDir(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/script", strings.NewReader(`{"files":["../secret.txt"]}`))
+	rec := httptest.NewRecorder()
+
+	HandleCreateScript(store).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	const wantBody = "file path cannot escape the download root: ../secret.txt\n"
+	if rec.Body.String() != wantBody {
+		t.Fatalf("expected body %q, got %q", wantBody, rec.Body.String())
+	}
+}
+
+func waitForScriptJobDone(t *testing.T, store *core.Store, id string) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		job, ok := store.Get(id)
+		if ok && job.Status == core.StatusDone && job.Filename != "" {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for script job %s to complete", id)
 }

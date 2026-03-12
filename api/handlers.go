@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,11 +14,11 @@ import (
 	"github.com/jair/bulkdownload/core"
 )
 
-type ZipRequest struct {
+type JobRequest struct {
 	Files []string `json:"files"`
 }
 
-type ZipResponse struct {
+type JobResponse struct {
 	ID        string    `json:"id"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
@@ -29,7 +30,7 @@ func HandleCreateZip(store *core.Store) http.HandlerFunc {
 			return
 		}
 
-		var req ZipRequest
+		var req JobRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
@@ -54,7 +55,49 @@ func HandleCreateZip(store *core.Store) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		_ = json.NewEncoder(w).Encode(ZipResponse{
+		_ = json.NewEncoder(w).Encode(JobResponse{
+			ID:        job.ID,
+			ExpiresAt: job.ExpiresAt,
+		})
+	}
+}
+
+func HandleCreateScript(store *core.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req JobRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if len(req.Files) == 0 {
+			http.Error(w, "files list is empty", http.StatusBadRequest)
+			return
+		}
+
+		normalized := make([]string, 0, len(req.Files))
+		for _, file := range req.Files {
+			relPath, err := normalizeRelativePath(file)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			normalized = append(normalized, relPath)
+		}
+
+		job := core.NewJob(normalized)
+		store.Set(job)
+		log.Printf("script create: job %s accepted with %d files, expires at %s", job.ID, len(job.Files), job.ExpiresAt.Format(time.RFC3339))
+
+		go core.ProcessScriptJob(store, job)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(JobResponse{
 			ID:        job.ID,
 			ExpiresAt: job.ExpiresAt,
 		})
@@ -102,9 +145,29 @@ func HandleDownload(store *core.Store) http.HandlerFunc {
 			return
 		}
 
-		zipPath := filepath.Join(core.OutputDir, job.Filename)
+		zipPath := filepath.Join(core.JobsDir, job.Filename)
 		log.Printf("download: serving job %s from %s", id, zipPath)
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, job.Filename))
 		http.ServeFile(w, r, zipPath)
 	}
+}
+
+func normalizeRelativePath(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("file path cannot be empty")
+	}
+	if strings.HasPrefix(trimmed, "/") {
+		return "", fmt.Errorf("file path must be relative: %s", raw)
+	}
+
+	cleaned := path.Clean(trimmed)
+	if cleaned == "." || cleaned == "" {
+		return "", fmt.Errorf("file path cannot be empty")
+	}
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("file path cannot escape the download root: %s", raw)
+	}
+
+	return cleaned, nil
 }

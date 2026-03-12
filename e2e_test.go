@@ -23,18 +23,20 @@ func useTestConfig(t *testing.T, zipTTL, cleanupTick, processingDelay time.Durat
 		core.LoadConfig()
 	})
 
-	outputDir := filepath.Join(t.TempDir(), "zips")
-	t.Setenv("OUTPUT_DIR", outputDir)
+	jobsDir := filepath.Join(t.TempDir(), "jobs")
+	t.Setenv("JOBS_DIR", jobsDir)
+	t.Setenv("PUBLIC_BASE_URL", "https://download.mohd.org")
+	t.Setenv("DOWNLOAD_ROOT_DIR", "mohd_data")
 	t.Setenv("ZIP_TTL", zipTTL.String())
 	t.Setenv("CLEANUP_TICK", cleanupTick.String())
 	t.Setenv("PROCESSING_DELAY", processingDelay.String())
 	core.LoadConfig()
 
-	if err := os.MkdirAll(core.OutputDir, 0o755); err != nil {
-		t.Fatalf("create output dir: %v", err)
+	if err := os.MkdirAll(core.JobsDir, 0o755); err != nil {
+		t.Fatalf("create jobs dir: %v", err)
 	}
 
-	return outputDir
+	return jobsDir
 }
 
 func TestEndToEndZipLifecycle(t *testing.T) {
@@ -54,6 +56,7 @@ func TestEndToEndZipLifecycle(t *testing.T) {
 	core.StartCleanup(store)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/zip", api.HandleCreateZip(store))
+	mux.HandleFunc("/script", api.HandleCreateScript(store))
 	mux.HandleFunc("/status/", api.HandleStatus(store))
 	mux.HandleFunc("/download/", api.HandleDownload(store))
 
@@ -71,7 +74,7 @@ func TestEndToEndZipLifecycle(t *testing.T) {
 		t.Fatalf("expected create status %d, got %d: %s", http.StatusAccepted, createResp.StatusCode, string(body))
 	}
 
-	var created api.ZipResponse
+	var created api.JobResponse
 	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
 		t.Fatalf("decode create response: %v", err)
 	}
@@ -136,4 +139,76 @@ func TestEndToEndZipLifecycle(t *testing.T) {
 	}
 
 	t.Fatalf("timed out waiting for job completion")
+}
+
+func TestEndToEndScriptLifecycle(t *testing.T) {
+	useTestConfig(t, 3*time.Second, 500*time.Millisecond, 250*time.Millisecond)
+
+	store := core.NewStore()
+	core.StartCleanup(store)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/zip", api.HandleCreateZip(store))
+	mux.HandleFunc("/script", api.HandleCreateScript(store))
+	mux.HandleFunc("/status/", api.HandleStatus(store))
+	mux.HandleFunc("/download/", api.HandleDownload(store))
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	createResp, err := http.Post(server.URL+"/script", "application/json", strings.NewReader(`{"files":["rna/accession.bigwig","dna/sample.cram"]}`))
+	if err != nil {
+		t.Fatalf("create script request: %v", err)
+	}
+	defer createResp.Body.Close()
+
+	if createResp.StatusCode != http.StatusAccepted {
+		body, _ := io.ReadAll(createResp.Body)
+		t.Fatalf("expected create status %d, got %d: %s", http.StatusAccepted, createResp.StatusCode, string(body))
+	}
+
+	var created api.JobResponse
+	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		statusResp, err := http.Get(server.URL + "/status/" + created.ID)
+		if err != nil {
+			t.Fatalf("get status: %v", err)
+		}
+
+		var job core.Job
+		if err := json.NewDecoder(statusResp.Body).Decode(&job); err != nil {
+			statusResp.Body.Close()
+			t.Fatalf("decode status response: %v", err)
+		}
+		statusResp.Body.Close()
+
+		if job.Status == core.StatusDone {
+			scriptPath := filepath.Join(core.JobsDir, job.Filename)
+			data, err := os.ReadFile(scriptPath)
+			if err != nil {
+				t.Fatalf("read generated script: %v", err)
+			}
+			content := string(data)
+			if !strings.Contains(content, "BASE_URL='https://download.mohd.org'") {
+				t.Fatalf("expected script to include base URL, got %q", content)
+			}
+			if !strings.Contains(content, "'rna/accession.bigwig'") {
+				t.Fatalf("expected script to include first relative path, got %q", content)
+			}
+			if !strings.Contains(content, "DOWNLOAD_ROOT=${DOWNLOAD_ROOT:-'mohd_data'}") {
+				t.Fatalf("expected script to include download root default, got %q", content)
+			}
+			if !strings.Contains(content, "MAX_JOBS=${MAX_JOBS:-3}") {
+				t.Fatalf("expected script to include max jobs default, got %q", content)
+			}
+			return
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for script job completion")
 }
