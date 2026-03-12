@@ -66,8 +66,6 @@ fi
 printf '\nAll downloads completed successfully.\n'
 `
 
-var downloadScript = template.Must(template.New("download-script").Parse(downloadScriptTemplate))
-
 type scriptTemplateData struct {
 	BaseURL      string
 	DownloadRoot string
@@ -84,9 +82,7 @@ func ProcessScriptJob(store *Store, job *Job) {
 	store.SetStatus(job.ID, StatusProcessing)
 
 	log.Printf("script job %s processing started", job.ID)
-	log.Printf("script job %s delaying creation for %s", job.ID, ProcessingDelay)
 	time.Sleep(ProcessingDelay)
-	log.Printf("script job %s delay finished, creating script", job.ID)
 
 	filename := job.ID + ".sh"
 	outPath := filepath.Join(JobsDir, filename)
@@ -111,8 +107,31 @@ func createDownloadScript(dest string, files []string) error {
 	}
 	defer f.Close()
 
-	data := newScriptTemplateData(files)
-	if err := downloadScript.Execute(f, data); err != nil {
+	templateFiles := make([]scriptTemplateFile, 0, len(files))
+	for i, file := range files {
+		lineSuffix := " \\\n"
+		if i == len(files)-1 {
+			lineSuffix = "\n"
+		}
+		templateFiles = append(templateFiles, scriptTemplateFile{
+			Value:      shellQuote(file),
+			LineSuffix: lineSuffix,
+		})
+	}
+
+	data := scriptTemplateData{
+		BaseURL:      shellQuote(strings.TrimRight(PublicBaseURL, "/")),
+		DownloadRoot: shellQuote(DownloadRootDir),
+		MaxJobs:      3,
+		Files:        templateFiles,
+	}
+
+	tmpl, err := template.New("download-script").Parse(downloadScriptTemplate)
+	if err != nil {
+		return fmt.Errorf("parse script template: %w", err)
+	}
+
+	if err := tmpl.Execute(f, data); err != nil {
 		return fmt.Errorf("write script file: %w", err)
 	}
 
@@ -121,32 +140,6 @@ func createDownloadScript(dest string, files []string) error {
 	}
 
 	return nil
-}
-
-func newScriptTemplateData(files []string) scriptTemplateData {
-	quotedFiles := make([]string, 0, len(files))
-	for _, file := range files {
-		quotedFiles = append(quotedFiles, shellQuote(file))
-	}
-
-	templateFiles := make([]scriptTemplateFile, 0, len(quotedFiles))
-	for i, file := range quotedFiles {
-		lineSuffix := " \\\n"
-		if i == len(quotedFiles)-1 {
-			lineSuffix = "\n"
-		}
-		templateFiles = append(templateFiles, scriptTemplateFile{
-			Value:      file,
-			LineSuffix: lineSuffix,
-		})
-	}
-
-	return scriptTemplateData{
-		BaseURL:      shellQuote(strings.TrimRight(PublicBaseURL, "/")),
-		DownloadRoot: shellQuote(DownloadRootDir),
-		MaxJobs:      3,
-		Files:        templateFiles,
-	}
 }
 
 func shellQuote(value string) string {
