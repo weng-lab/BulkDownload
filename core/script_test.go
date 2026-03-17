@@ -52,8 +52,10 @@ func TestProcessScriptJobCreatesScriptAndMarksDone(t *testing.T) {
 	useTestRuntime(t, 3*time.Second, 5*time.Minute, 100*time.Millisecond)
 
 	store := NewStore()
-	job := NewJob([]string{"rna/accession.bigwig"})
-	store.Set(job)
+	job, err := store.CreateJob([]string{"rna/accession.bigwig"})
+	if err != nil {
+		t.Fatalf("CreateJob returned error: %v", err)
+	}
 
 	go ProcessScriptJob(store, job)
 

@@ -1,10 +1,10 @@
 package core
 
 import (
+	"errors"
+	"math/rand/v2"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -28,17 +28,96 @@ type Store struct {
 	jobs map[string]*Job
 }
 
+var jobIDWords = []string{
+	"allele",
+	"amplic",
+	"codon",
+	"contig",
+	"crispr",
+	"exome",
+	"exon",
+	"genome",
+	"intron",
+	"kmer",
+	"locus",
+	"motif",
+	"operon",
+	"orf",
+	"plasmid",
+	"primer",
+	"repeat",
+	"insert",
+	"splice",
+	"strand",
+	"telomer",
+	"transpo",
+	"utr",
+	"utr3",
+	"atac",
+	"bam",
+	"bed",
+	"bigwig",
+	"cram",
+	"chipseq",
+	"cpg",
+	"dnase",
+	"eqtl",
+	"fastq",
+	"gtf",
+	"hic",
+	"indel",
+	"mirna",
+	"peaks",
+	"phased",
+	"reads",
+	"rnaseq",
+	"rpkm",
+	"snp",
+	"sqtl",
+	"tad",
+	"tpm",
+	"vcf",
+	"wig",
+}
+
+var generateJobID = func() string {
+	first := randomWord(jobIDWords)
+	second := randomWord(jobIDWords)
+	for second == first {
+		second = randomWord(jobIDWords)
+	}
+	return first + "-" + second
+}
+
+var jobIDGenerationTimeout = 3 * time.Second
+
 func NewStore() *Store {
 	return &Store{jobs: make(map[string]*Job)}
 }
 
-func NewJob(files []string) *Job {
-	return &Job{
-		ID:        uuid.NewString(),
-		Status:    StatusPending,
-		ExpiresAt: time.Now().Add(ZipTTL),
-		Files:     files,
+func (s *Store) CreateJob(files []string) (*Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	deadline := time.Now().Add(jobIDGenerationTimeout)
+	for time.Now().Before(deadline) {
+		id := generateJobID()
+		if _, exists := s.jobs[id]; exists {
+			continue
+		}
+
+		job := &Job{
+			ID:        id,
+			Status:    StatusPending,
+			ExpiresAt: time.Now().Add(ZipTTL),
+			Files:     files,
+		}
+		s.jobs[job.ID] = job
+
+		return job, nil
 	}
+
+	return nil, errors.New("generate job id: timed out finding unique id")
 }
 
 func (s *Store) Set(job *Job) {
@@ -115,4 +194,8 @@ func (s *Store) Expired() []*Job {
 	}
 
 	return out
+}
+
+func randomWord(words []string) string {
+	return words[rand.IntN(len(words))]
 }

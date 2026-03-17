@@ -76,8 +76,10 @@ func TestProcessJobCreatesZipAndMarksDone(t *testing.T) {
 		t.Fatalf("write test file: %v", err)
 	}
 
-	job := NewJob([]string{filePath})
-	store.Set(job)
+	job, err := store.CreateJob([]string{filePath})
+	if err != nil {
+		t.Fatalf("CreateJob returned error: %v", err)
+	}
 
 	go ProcessJob(store, job)
 
@@ -101,8 +103,10 @@ func TestProcessJobMarksFailureForMissingFile(t *testing.T) {
 	useTestRuntime(t, 3*time.Second, 5*time.Minute, 750*time.Millisecond)
 
 	store := NewStore()
-	job := NewJob([]string{"missing-file.txt"})
-	store.Set(job)
+	job, err := store.CreateJob([]string{"missing-file.txt"})
+	if err != nil {
+		t.Fatalf("CreateJob returned error: %v", err)
+	}
 
 	go ProcessJob(store, job)
 

@@ -47,8 +47,11 @@ func HandleCreateZip(store *core.Store) http.HandlerFunc {
 			}
 		}
 
-		job := core.NewJob(req.Files)
-		store.Set(job)
+		job, err := store.CreateJob(req.Files)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		log.Printf("create: job %s accepted with %d files, expires at %s", job.ID, len(job.Files), job.ExpiresAt.Format(time.RFC3339))
 
 		go core.ProcessJob(store, job)
@@ -86,8 +89,11 @@ func HandleCreateTarball(store *core.Store) http.HandlerFunc {
 			}
 		}
 
-		job := core.NewJob(req.Files)
-		store.Set(job)
+		job, err := store.CreateJob(req.Files)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		log.Printf("tarball create: job %s accepted with %d files, expires at %s", job.ID, len(job.Files), job.ExpiresAt.Format(time.RFC3339))
 
 		go core.ProcessTarballJob(store, job)
@@ -128,8 +134,11 @@ func HandleCreateScript(store *core.Store) http.HandlerFunc {
 			normalized = append(normalized, relPath)
 		}
 
-		job := core.NewJob(normalized)
-		store.Set(job)
+		job, err := store.CreateJob(normalized)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		log.Printf("script create: job %s accepted with %d files, expires at %s", job.ID, len(job.Files), job.ExpiresAt.Format(time.RFC3339))
 
 		go core.ProcessScriptJob(store, job)
