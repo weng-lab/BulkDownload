@@ -26,7 +26,7 @@ func main() {
 	mux.HandleFunc("/status/", api.HandleStatus(store))
 	mux.HandleFunc("/download/", api.HandleDownload(store))
 
-	log.Printf("config: jobs_dir=%s public_base_url=%s download_root_dir=%s port=%s zip_ttl=%s cleanup_tick=%s processing_delay=%s", core.JobsDir, core.PublicBaseURL, core.DownloadRootDir, core.Port, core.ZipTTL, core.CleanupTick, core.ProcessingDelay)
+	log.Printf("config: jobs_dir=%s source_root_dir=%s public_base_url=%s download_root_dir=%s port=%s zip_ttl=%s cleanup_tick=%s processing_delay=%s", core.JobsDir, core.SourceRootDir, core.PublicBaseURL, core.DownloadRootDir, core.Port, core.ZipTTL, core.CleanupTick, core.ProcessingDelay)
 	log.Printf("bulk download service listening on :%s", core.Port)
 	log.Fatal(http.ListenAndServe(":"+core.Port, mux))
 }

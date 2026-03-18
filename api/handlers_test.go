@@ -22,6 +22,7 @@ func useTestJobsDir(t *testing.T) string {
 
 	jobsDir := filepath.Join(t.TempDir(), "jobs")
 	t.Setenv("JOBS_DIR", jobsDir)
+	t.Setenv("SOURCE_ROOT_DIR", "")
 	t.Setenv("PUBLIC_BASE_URL", "https://download.mohd.org")
 	t.Setenv("DOWNLOAD_ROOT_DIR", "mohd_data")
 	core.LoadConfig()
@@ -31,6 +32,24 @@ func useTestJobsDir(t *testing.T) string {
 	}
 
 	return jobsDir
+}
+
+func useTestSourceRootDir(t *testing.T) string {
+	t.Helper()
+
+	t.Cleanup(func() {
+		core.LoadConfig()
+	})
+
+	sourceRootDir := filepath.Join(t.TempDir(), "source")
+	if err := os.MkdirAll(sourceRootDir, 0o755); err != nil {
+		t.Fatalf("create source root dir: %v", err)
+	}
+
+	t.Setenv("SOURCE_ROOT_DIR", sourceRootDir)
+	core.LoadConfig()
+
+	return sourceRootDir
 }
 
 func TestHandleCreateZipReturnsExactMissingFileError(t *testing.T) {
@@ -103,6 +122,63 @@ func TestHandleCreateZipAcceptsValidRequest(t *testing.T) {
 	store.Delete(got.ID)
 }
 
+func TestHandleCreateZipResolvesRelativePathFromSourceRoot(t *testing.T) {
+	store := core.NewStore()
+	useTestJobsDir(t)
+	sourceRootDir := useTestSourceRootDir(t)
+
+	filePath := filepath.Join(sourceRootDir, "nested", "alpha.txt")
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		t.Fatalf("create nested source dir: %v", err)
+	}
+	if err := os.WriteFile(filePath, []byte("alpha contents"), 0o644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/zip", strings.NewReader(`{"files":["nested/alpha.txt"]}`))
+	rec := httptest.NewRecorder()
+
+	HandleCreateZip(store).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
+	}
+
+	var got JobResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	job, ok := store.Get(got.ID)
+	if !ok {
+		t.Fatalf("expected job %q to be stored", got.ID)
+	}
+	if len(job.Files) != 1 || job.Files[0] != filePath {
+		t.Fatalf("expected stored job files to contain %q, got %#v", filePath, job.Files)
+	}
+
+	store.Delete(got.ID)
+}
+
+func TestHandleCreateZipRejectsPathOutsideSourceRoot(t *testing.T) {
+	store := core.NewStore()
+	useTestJobsDir(t)
+	useTestSourceRootDir(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/zip", strings.NewReader(`{"files":["../secret.txt"]}`))
+	rec := httptest.NewRecorder()
+
+	HandleCreateZip(store).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	const wantBody = "file path cannot escape source root: ../secret.txt\n"
+	if rec.Body.String() != wantBody {
+		t.Fatalf("expected body %q, got %q", wantBody, rec.Body.String())
+	}
+}
+
 func TestHandleCreateTarballReturnsExactMissingFileError(t *testing.T) {
 	store := core.NewStore()
 	req := httptest.NewRequest(http.MethodPost, "/tarball", strings.NewReader(`{"files":["testdata/does-not-exist.txt"]}`))
@@ -171,6 +247,63 @@ func TestHandleCreateTarballAcceptsValidRequest(t *testing.T) {
 		_ = os.Remove(filepath.Join(core.JobsDir, job.Filename))
 	}
 	store.Delete(got.ID)
+}
+
+func TestHandleCreateTarballResolvesRelativePathFromSourceRoot(t *testing.T) {
+	store := core.NewStore()
+	useTestJobsDir(t)
+	sourceRootDir := useTestSourceRootDir(t)
+
+	filePath := filepath.Join(sourceRootDir, "nested", "alpha.txt")
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		t.Fatalf("create nested source dir: %v", err)
+	}
+	if err := os.WriteFile(filePath, []byte("alpha contents"), 0o644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/tarball", strings.NewReader(`{"files":["nested/alpha.txt"]}`))
+	rec := httptest.NewRecorder()
+
+	HandleCreateTarball(store).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
+	}
+
+	var got JobResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	job, ok := store.Get(got.ID)
+	if !ok {
+		t.Fatalf("expected job %q to be stored", got.ID)
+	}
+	if len(job.Files) != 1 || job.Files[0] != filePath {
+		t.Fatalf("expected stored job files to contain %q, got %#v", filePath, job.Files)
+	}
+
+	store.Delete(got.ID)
+}
+
+func TestHandleCreateTarballRejectsPathOutsideSourceRoot(t *testing.T) {
+	store := core.NewStore()
+	useTestJobsDir(t)
+	useTestSourceRootDir(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/tarball", strings.NewReader(`{"files":["../secret.txt"]}`))
+	rec := httptest.NewRecorder()
+
+	HandleCreateTarball(store).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	const wantBody = "file path cannot escape source root: ../secret.txt\n"
+	if rec.Body.String() != wantBody {
+		t.Fatalf("expected body %q, got %q", wantBody, rec.Body.String())
+	}
 }
 
 func TestHandleStatusReturnsStoredJob(t *testing.T) {

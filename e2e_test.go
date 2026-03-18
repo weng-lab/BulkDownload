@@ -27,6 +27,7 @@ func useTestConfig(t *testing.T, zipTTL, cleanupTick, processingDelay time.Durat
 
 	jobsDir := filepath.Join(t.TempDir(), "jobs")
 	t.Setenv("JOBS_DIR", jobsDir)
+	t.Setenv("SOURCE_ROOT_DIR", "")
 	t.Setenv("PUBLIC_BASE_URL", "https://download.mohd.org")
 	t.Setenv("DOWNLOAD_ROOT_DIR", "mohd_data")
 	t.Setenv("ZIP_TTL", zipTTL.String())

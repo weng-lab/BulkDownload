@@ -10,6 +10,7 @@ func TestLoadConfigUsesDefaultsWithoutEnv(t *testing.T) {
 		LoadConfig()
 	})
 	t.Setenv("JOBS_DIR", "")
+	t.Setenv("SOURCE_ROOT_DIR", "")
 	t.Setenv("PUBLIC_BASE_URL", "")
 	t.Setenv("DOWNLOAD_ROOT_DIR", "")
 	t.Setenv("PORT", "")
@@ -21,6 +22,9 @@ func TestLoadConfigUsesDefaultsWithoutEnv(t *testing.T) {
 
 	if JobsDir != "./jobs" {
 		t.Fatalf("expected default JobsDir, got %s", JobsDir)
+	}
+	if SourceRootDir != "" {
+		t.Fatalf("expected default SourceRootDir, got %s", SourceRootDir)
 	}
 	if PublicBaseURL != "https://download.mohd.org" {
 		t.Fatalf("expected default PublicBaseURL, got %s", PublicBaseURL)
@@ -47,6 +51,7 @@ func TestLoadConfigUsesEnvOverrides(t *testing.T) {
 		LoadConfig()
 	})
 	t.Setenv("JOBS_DIR", "/tmp/bulkdownload-jobs")
+	t.Setenv("SOURCE_ROOT_DIR", "/mnt/source-data")
 	t.Setenv("PUBLIC_BASE_URL", "https://example.com/data")
 	t.Setenv("DOWNLOAD_ROOT_DIR", "custom-data")
 	t.Setenv("PORT", "9090")
@@ -58,6 +63,9 @@ func TestLoadConfigUsesEnvOverrides(t *testing.T) {
 
 	if JobsDir != "/tmp/bulkdownload-jobs" {
 		t.Fatalf("expected JobsDir override, got %s", JobsDir)
+	}
+	if SourceRootDir != "/mnt/source-data" {
+		t.Fatalf("expected SourceRootDir override, got %s", SourceRootDir)
 	}
 	if PublicBaseURL != "https://example.com/data" {
 		t.Fatalf("expected PublicBaseURL override, got %s", PublicBaseURL)
@@ -84,6 +92,7 @@ func TestLoadConfigFallsBackOnInvalidEnv(t *testing.T) {
 		LoadConfig()
 	})
 	t.Setenv("JOBS_DIR", "")
+	t.Setenv("SOURCE_ROOT_DIR", "")
 	t.Setenv("PUBLIC_BASE_URL", "")
 	t.Setenv("DOWNLOAD_ROOT_DIR", "")
 	t.Setenv("PORT", "")

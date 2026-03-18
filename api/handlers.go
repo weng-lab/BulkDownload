@@ -40,12 +40,12 @@ func HandleCreateZip(store *core.Store) http.HandlerFunc {
 			return
 		}
 
-		for _, f := range req.Files {
-			if _, err := os.Stat(f); err != nil {
-				http.Error(w, fmt.Sprintf("file not found: %s", f), http.StatusBadRequest)
-				return
-			}
+		resolvedFiles, err := resolveArchiveFiles(req.Files)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
+		req.Files = resolvedFiles
 
 		job, err := store.CreateJob(req.Files)
 		if err != nil {
@@ -82,12 +82,12 @@ func HandleCreateTarball(store *core.Store) http.HandlerFunc {
 			return
 		}
 
-		for _, f := range req.Files {
-			if _, err := os.Stat(f); err != nil {
-				http.Error(w, fmt.Sprintf("file not found: %s", f), http.StatusBadRequest)
-				return
-			}
+		resolvedFiles, err := resolveArchiveFiles(req.Files)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
+		req.Files = resolvedFiles
 
 		job, err := store.CreateJob(req.Files)
 		if err != nil {
@@ -218,4 +218,51 @@ func normalizeRelativePath(raw string) (string, error) {
 	}
 
 	return cleaned, nil
+}
+
+func resolveArchivePath(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("file path cannot be empty")
+	}
+
+	if core.SourceRootDir == "" {
+		return trimmed, nil
+	}
+
+	root := filepath.Clean(core.SourceRootDir)
+	if filepath.IsAbs(trimmed) {
+		cleaned := filepath.Clean(trimmed)
+		rel, err := filepath.Rel(root, cleaned)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return "", fmt.Errorf("file path cannot escape source root: %s", raw)
+		}
+		return cleaned, nil
+	}
+
+	cleaned := filepath.Clean(trimmed)
+	if cleaned == "." || cleaned == "" {
+		return "", fmt.Errorf("file path cannot be empty")
+	}
+	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("file path cannot escape source root: %s", raw)
+	}
+
+	return filepath.Join(root, cleaned), nil
+}
+
+func resolveArchiveFiles(files []string) ([]string, error) {
+	resolved := make([]string, 0, len(files))
+	for _, file := range files {
+		path, err := resolveArchivePath(file)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := os.Stat(path); err != nil {
+			return nil, fmt.Errorf("file not found: %s", file)
+		}
+		resolved = append(resolved, path)
+	}
+
+	return resolved, nil
 }

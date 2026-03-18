@@ -10,6 +10,7 @@ import (
 
 var (
 	JobsDir         = "./jobs"
+	SourceRootDir   string
 	PublicBaseURL   = "https://download.mohd.org"
 	DownloadRootDir = "mohd_data"
 	Port            = "8080"
@@ -25,6 +26,7 @@ func LoadConfig() {
 	}
 
 	JobsDir = loadStringEnv("JOBS_DIR", "./jobs")
+	SourceRootDir = loadStringEnv("SOURCE_ROOT_DIR", "")
 	PublicBaseURL = loadStringEnv("PUBLIC_BASE_URL", "https://download.mohd.org")
 	DownloadRootDir = loadStringEnv("DOWNLOAD_ROOT_DIR", "mohd_data")
 	Port = loadStringEnv("PORT", "8080")

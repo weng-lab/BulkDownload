@@ -3,6 +3,6 @@ set -euo pipefail
 
 job_id="${1:?usage: $0 <job-id>}"
 
-base_url="${PUBLIC_BASE_URL:-http://localhost:9000}"
+base_url="${API_BASE_URL:-http://localhost:8080}"
 
-curl -fsSL "${base_url}/jobs/${job_id}.sh" | bash
+curl -fsSL "${base_url%/}/download/${job_id}" | bash
