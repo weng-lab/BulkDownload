@@ -12,6 +12,7 @@ const (
 	StatusProcessing = "processing"
 	StatusDone       = "done"
 	StatusFailed     = "failed"
+	maxJobIDAttempts = 100
 )
 
 type Job struct {
@@ -89,35 +90,38 @@ var generateJobID = func() string {
 	return first + "-" + second
 }
 
-var jobIDGenerationTimeout = 3 * time.Second
+var jobIDCollisionSleep = 10 * time.Millisecond
 
 func NewStore() *Store {
 	return &Store{jobs: make(map[string]*Job)}
 }
 
 func (s *Store) CreateJob(files []string) (*Job, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	expiresAt := time.Now().Add(ZipTTL)
 
-	deadline := time.Now().Add(jobIDGenerationTimeout)
-	for time.Now().Before(deadline) {
+	for range maxJobIDAttempts {
 		id := generateJobID()
+
+		s.mu.Lock()
 		if _, exists := s.jobs[id]; exists {
+			s.mu.Unlock()
+			time.Sleep(jobIDCollisionSleep)
 			continue
 		}
 
 		job := &Job{
 			ID:        id,
 			Status:    StatusPending,
-			ExpiresAt: time.Now().Add(ZipTTL),
+			ExpiresAt: expiresAt,
 			Files:     files,
 		}
 		s.jobs[job.ID] = job
+		s.mu.Unlock()
 
 		return job, nil
 	}
 
-	return nil, errors.New("generate job id: timed out finding unique id")
+	return nil, errors.New("generate job id: exhausted retries")
 }
 
 func (s *Store) Set(job *Job) {

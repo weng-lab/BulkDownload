@@ -157,30 +157,30 @@ func TestStoreCreateJobRetriesUntilUnusedID(t *testing.T) {
 	}
 }
 
-func TestStoreCreateJobReturnsErrorAfterTimeout(t *testing.T) {
+func TestStoreCreateJobReturnsErrorAfterExhaustingRetries(t *testing.T) {
 	store := NewStore()
 	store.Set(&Job{ID: "allele-atac", Status: StatusPending, ExpiresAt: time.Now().Add(time.Minute)})
 
 	originalGenerateJobID := generateJobID
-	originalTimeout := jobIDGenerationTimeout
+	originalCollisionSleep := jobIDCollisionSleep
 	defer func() {
 		generateJobID = originalGenerateJobID
-		jobIDGenerationTimeout = originalTimeout
+		jobIDCollisionSleep = originalCollisionSleep
 	}()
 
 	generateJobID = func() string {
 		return "allele-atac"
 	}
-	jobIDGenerationTimeout = 10 * time.Millisecond
+	jobIDCollisionSleep = 0
 
 	job, err := store.CreateJob([]string{"file.txt"})
 	if err == nil {
-		t.Fatal("expected CreateJob to return an error after timing out")
+		t.Fatal("expected CreateJob to return an error after exhausting retries")
 	}
 	if job != nil {
-		t.Fatalf("expected no job on timeout, got %#v", job)
+		t.Fatalf("expected no job on retry exhaustion, got %#v", job)
 	}
-	if err.Error() != "generate job id: timed out finding unique id" {
+	if err.Error() != "generate job id: exhausted retries" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
