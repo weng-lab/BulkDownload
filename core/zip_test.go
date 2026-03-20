@@ -28,8 +28,14 @@ func TestCreateZipWritesFlatArchiveWithFileContents(t *testing.T) {
 		t.Fatalf("write second file: %v", err)
 	}
 
-	if err := createZip(zipPath, []string{firstPath, secondPath}); err != nil {
+	progressUpdates := []int{}
+	if err := createZip(zipPath, []string{firstPath, secondPath}, func(progress int) {
+		progressUpdates = append(progressUpdates, progress)
+	}); err != nil {
 		t.Fatalf("create zip: %v", err)
+	}
+	if len(progressUpdates) == 0 {
+		t.Fatalf("expected createZip to report progress")
 	}
 
 	reader, err := zip.OpenReader(zipPath)
@@ -90,7 +96,7 @@ func TestProcessJobCreatesZipAndMarksDone(t *testing.T) {
 
 	waitFor(t, 2*time.Second, 50*time.Millisecond, func() bool {
 		got, ok := store.Get(job.ID)
-		return ok && got.Status == StatusDone && got.Filename != ""
+		return ok && got.Status == StatusDone && got.Filename != "" && got.Progress == 100
 	}, "job to reach done")
 
 	zipPath := filepath.Join(JobsDir, job.Filename)
@@ -119,6 +125,14 @@ func TestProcessJobMarksFailureForMissingFile(t *testing.T) {
 		got, ok := store.Get(job.ID)
 		return ok && got.Status == StatusFailed && got.Error != ""
 	}, "job to reach failed")
+
+	got, ok := store.Get(job.ID)
+	if !ok {
+		t.Fatalf("expected failed job %q to exist", job.ID)
+	}
+	if got.Progress != 0 {
+		t.Fatalf("expected failed job progress to remain %d, got %d", 0, got.Progress)
+	}
 
 	if job.Filename != "" {
 		t.Fatalf("expected failed job to have no filename, got %q", job.Filename)

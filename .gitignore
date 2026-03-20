@@ -1,6 +1,8 @@
-downloads/
-zips/
+jobs/
 .env
 .opencode
 .devserve
 mohd_data
+eb01.bigWig
+eb02.bigWig
+eb03.bigWig

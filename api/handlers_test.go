@@ -308,7 +308,7 @@ func TestHandleCreateTarballRejectsPathOutsideSourceRoot(t *testing.T) {
 
 func TestHandleStatusReturnsStoredJob(t *testing.T) {
 	store := core.NewStore()
-	job := &core.Job{ID: "job-123", Status: core.StatusProcessing, ExpiresAt: time.Now().Add(time.Minute)}
+	job := &core.Job{ID: "job-123", Status: core.StatusProcessing, Progress: 37, ExpiresAt: time.Now().Add(time.Minute)}
 	store.Set(job)
 
 	req := httptest.NewRequest(http.MethodGet, "/status/"+job.ID, nil)
@@ -329,6 +329,9 @@ func TestHandleStatusReturnsStoredJob(t *testing.T) {
 	}
 	if got.Status != job.Status {
 		t.Fatalf("expected job status %q, got %q", job.Status, got.Status)
+	}
+	if got.Progress != job.Progress {
+		t.Fatalf("expected job progress %d, got %d", job.Progress, got.Progress)
 	}
 }
 

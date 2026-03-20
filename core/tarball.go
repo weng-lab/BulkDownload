@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -20,7 +19,9 @@ func ProcessTarballJob(store *Store, job *Job) {
 	filename := job.ID + ".tar.gz"
 	outPath := filepath.Join(JobsDir, filename)
 
-	if err := createTarball(outPath, job.Files); err != nil {
+	if err := createTarball(outPath, job.Files, func(progress int) {
+		store.SetProgress(job.ID, progress)
+	}); err != nil {
 		log.Printf("tarball failed for job %s: %v", job.ID, err)
 		if removeErr := os.Remove(outPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			log.Printf("cleanup failed tarball for job %s: %v", job.ID, removeErr)
@@ -34,7 +35,13 @@ func ProcessTarballJob(store *Store, job *Job) {
 	log.Printf("job %s complete: %s", job.ID, outPath)
 }
 
-func createTarball(dest string, files []string) error {
+func createTarball(dest string, files []string, onProgress func(int)) error {
+	total, err := totalFileSize(files)
+	if err != nil {
+		return fmt.Errorf("calculate tarball progress: %w", err)
+	}
+	reporter := newProgressReporter(total, onProgress)
+
 	f, err := os.Create(dest)
 	if err != nil {
 		return fmt.Errorf("create tarball file: %w", err)
@@ -48,7 +55,7 @@ func createTarball(dest string, files []string) error {
 	defer tw.Close()
 
 	for _, path := range files {
-		if err := addFileToTarball(tw, path); err != nil {
+		if err := addFileToTarball(tw, path, reporter); err != nil {
 			return fmt.Errorf("add %s: %w", path, err)
 		}
 	}
@@ -56,7 +63,7 @@ func createTarball(dest string, files []string) error {
 	return nil
 }
 
-func addFileToTarball(tw *tar.Writer, path string) error {
+func addFileToTarball(tw *tar.Writer, path string, reporter *progressReporter) error {
 	src, err := os.Open(path)
 	if err != nil {
 		return err
@@ -78,6 +85,5 @@ func addFileToTarball(tw *tar.Writer, path string) error {
 		return err
 	}
 
-	_, err = io.Copy(tw, src)
-	return err
+	return copyWithProgress(tw, src, reporter)
 }

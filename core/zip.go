@@ -3,7 +3,6 @@ package core
 import (
 	"archive/zip"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -19,7 +18,9 @@ func ProcessJob(store *Store, job *Job) {
 	filename := job.ID + ".zip"
 	outPath := filepath.Join(JobsDir, filename)
 
-	if err := createZip(outPath, job.Files); err != nil {
+	if err := createZip(outPath, job.Files, func(progress int) {
+		store.SetProgress(job.ID, progress)
+	}); err != nil {
 		log.Printf("zip failed for job %s: %v", job.ID, err)
 		if removeErr := os.Remove(outPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			log.Printf("cleanup failed zip for job %s: %v", job.ID, removeErr)
@@ -33,7 +34,13 @@ func ProcessJob(store *Store, job *Job) {
 	log.Printf("job %s complete: %s", job.ID, outPath)
 }
 
-func createZip(dest string, files []string) error {
+func createZip(dest string, files []string, onProgress func(int)) error {
+	total, err := totalFileSize(files)
+	if err != nil {
+		return fmt.Errorf("calculate zip progress: %w", err)
+	}
+	reporter := newProgressReporter(total, onProgress)
+
 	f, err := os.Create(dest)
 	if err != nil {
 		return fmt.Errorf("create zip file: %w", err)
@@ -44,7 +51,7 @@ func createZip(dest string, files []string) error {
 	defer zw.Close()
 
 	for _, path := range files {
-		if err := addFileToZip(zw, path); err != nil {
+		if err := addFileToZip(zw, path, reporter); err != nil {
 			return fmt.Errorf("add %s: %w", path, err)
 		}
 	}
@@ -52,7 +59,7 @@ func createZip(dest string, files []string) error {
 	return nil
 }
 
-func addFileToZip(zw *zip.Writer, path string) error {
+func addFileToZip(zw *zip.Writer, path string, reporter *progressReporter) error {
 	src, err := os.Open(path)
 	if err != nil {
 		return err
@@ -76,6 +83,5 @@ func addFileToZip(zw *zip.Writer, path string) error {
 		return err
 	}
 
-	_, err = io.Copy(w, src)
-	return err
+	return copyWithProgress(w, src, reporter)
 }

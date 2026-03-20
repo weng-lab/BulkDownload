@@ -66,7 +66,7 @@ func TestProcessScriptJobCreatesScriptAndMarksDone(t *testing.T) {
 
 	waitFor(t, 2*time.Second, 50*time.Millisecond, func() bool {
 		got, ok := store.Get(job.ID)
-		return ok && got.Status == StatusDone && got.Filename != ""
+		return ok && got.Status == StatusDone && got.Filename != "" && got.Progress == 100
 	}, "script job to reach done")
 
 	scriptPath := filepath.Join(JobsDir, job.Filename)

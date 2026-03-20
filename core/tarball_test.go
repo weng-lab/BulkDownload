@@ -29,8 +29,14 @@ func TestCreateTarballWritesFlatArchiveWithFileContents(t *testing.T) {
 		t.Fatalf("write second file: %v", err)
 	}
 
-	if err := createTarball(tarballPath, []string{firstPath, secondPath}); err != nil {
+	progressUpdates := []int{}
+	if err := createTarball(tarballPath, []string{firstPath, secondPath}, func(progress int) {
+		progressUpdates = append(progressUpdates, progress)
+	}); err != nil {
 		t.Fatalf("create tarball: %v", err)
+	}
+	if len(progressUpdates) == 0 {
+		t.Fatalf("expected createTarball to report progress")
 	}
 
 	f, err := os.Open(tarballPath)
@@ -99,7 +105,7 @@ func TestProcessTarballJobCreatesTarballAndMarksDone(t *testing.T) {
 
 	waitFor(t, 2*time.Second, 50*time.Millisecond, func() bool {
 		got, ok := store.Get(job.ID)
-		return ok && got.Status == StatusDone && got.Filename != ""
+		return ok && got.Status == StatusDone && got.Filename != "" && got.Progress == 100
 	}, "tarball job to reach done")
 
 	tarballPath := filepath.Join(JobsDir, job.Filename)
@@ -128,6 +134,14 @@ func TestProcessTarballJobMarksFailureForMissingFile(t *testing.T) {
 		got, ok := store.Get(job.ID)
 		return ok && got.Status == StatusFailed && got.Error != ""
 	}, "tarball job to reach failed")
+
+	got, ok := store.Get(job.ID)
+	if !ok {
+		t.Fatalf("expected failed tarball job %q to exist", job.ID)
+	}
+	if got.Progress != 0 {
+		t.Fatalf("expected failed tarball job progress to remain %d, got %d", 0, got.Progress)
+	}
 
 	if job.Filename != "" {
 		t.Fatalf("expected failed job to have no filename, got %q", job.Filename)

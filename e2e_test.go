@@ -100,10 +100,16 @@ func TestEndToEndZipLifecycle(t *testing.T) {
 
 		if job.Status == core.StatusPending || job.Status == core.StatusProcessing {
 			observedIntermediate = true
+			if job.Progress < 0 || job.Progress > 99 {
+				t.Fatalf("expected in-progress zip job progress between 0 and 99, got %d", job.Progress)
+			}
 		}
 		if job.Status == core.StatusDone {
 			if !observedIntermediate {
 				t.Fatalf("expected to observe pending or processing before done")
+			}
+			if job.Progress != 100 {
+				t.Fatalf("expected done zip job progress %d, got %d", 100, job.Progress)
 			}
 
 			downloadResp, err := http.Get(server.URL + "/download/" + created.ID)
@@ -203,10 +209,16 @@ func TestEndToEndTarballLifecycle(t *testing.T) {
 
 		if job.Status == core.StatusPending || job.Status == core.StatusProcessing {
 			observedIntermediate = true
+			if job.Progress < 0 || job.Progress > 99 {
+				t.Fatalf("expected in-progress tarball job progress between 0 and 99, got %d", job.Progress)
+			}
 		}
 		if job.Status == core.StatusDone {
 			if !observedIntermediate {
 				t.Fatalf("expected to observe pending or processing before done")
+			}
+			if job.Progress != 100 {
+				t.Fatalf("expected done tarball job progress %d, got %d", 100, job.Progress)
 			}
 
 			downloadResp, err := http.Get(server.URL + "/download/" + created.ID)
@@ -313,6 +325,9 @@ func TestEndToEndScriptLifecycle(t *testing.T) {
 		statusResp.Body.Close()
 
 		if job.Status == core.StatusDone {
+			if job.Progress != 100 {
+				t.Fatalf("expected done script job progress %d, got %d", 100, job.Progress)
+			}
 			scriptPath := filepath.Join(core.JobsDir, job.Filename)
 			data, err := os.ReadFile(scriptPath)
 			if err != nil {

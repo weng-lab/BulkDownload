@@ -18,6 +18,7 @@ const (
 type Job struct {
 	ID        string    `json:"id"`
 	Status    string    `json:"status"`
+	Progress  int       `json:"progress"`
 	ExpiresAt time.Time `json:"expires_at"`
 	Files     []string  `json:"-"`
 	Error     string    `json:"error,omitempty"`
@@ -140,6 +141,29 @@ func (s *Store) SetStatus(id, status string) bool {
 	}
 
 	job.Status = status
+	if status == StatusPending {
+		job.Progress = 0
+	}
+	return true
+}
+
+func (s *Store) SetProgress(id string, progress int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	job, ok := s.jobs[id]
+	if !ok {
+		return false
+	}
+
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 100 {
+		progress = 100
+	}
+
+	job.Progress = progress
 	return true
 }
 
@@ -167,6 +191,7 @@ func (s *Store) SetDone(id, filename string) bool {
 	}
 
 	job.Status = StatusDone
+	job.Progress = 100
 	job.Filename = filename
 	job.Error = ""
 	return true
@@ -175,8 +200,18 @@ func (s *Store) SetDone(id, filename string) bool {
 func (s *Store) Get(id string) (*Job, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	j, ok := s.jobs[id]
-	return j, ok
+
+	job, ok := s.jobs[id]
+	if !ok {
+		return nil, false
+	}
+
+	clone := *job
+	if job.Files != nil {
+		clone.Files = append([]string(nil), job.Files...)
+	}
+
+	return &clone, true
 }
 
 func (s *Store) Delete(id string) {

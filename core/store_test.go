@@ -16,8 +16,20 @@ func TestStoreSetGetDelete(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected job %q to exist", job.ID)
 	}
-	if got != job {
-		t.Fatalf("expected stored job pointer to match original")
+	if got == job {
+		t.Fatalf("expected Get to return a snapshot copy")
+	}
+	if got.ID != job.ID || got.Status != job.Status {
+		t.Fatalf("expected snapshot to match stored job, got %#v", got)
+	}
+
+	got.Status = StatusDone
+	again, ok := store.Get(job.ID)
+	if !ok {
+		t.Fatalf("expected job %q to still exist", job.ID)
+	}
+	if again.Status != StatusPending {
+		t.Fatalf("expected snapshot mutation not to affect store, got status %q", again.Status)
 	}
 
 	store.Delete(job.ID)
@@ -56,6 +68,13 @@ func TestStoreSettersUpdateStoredJob(t *testing.T) {
 		t.Fatalf("expected status %q, got %q", StatusProcessing, job.Status)
 	}
 
+	if !store.SetProgress(job.ID, 42) {
+		t.Fatalf("expected SetProgress to update existing job")
+	}
+	if job.Progress != 42 {
+		t.Fatalf("expected progress %d, got %d", 42, job.Progress)
+	}
+
 	err := store.SetFailed(job.ID, assertErr("zip failed"))
 	if !err {
 		t.Fatalf("expected SetFailed to update existing job")
@@ -65,6 +84,9 @@ func TestStoreSettersUpdateStoredJob(t *testing.T) {
 	}
 	if job.Error != "zip failed" {
 		t.Fatalf("expected error to be recorded, got %q", job.Error)
+	}
+	if job.Progress != 42 {
+		t.Fatalf("expected failed job to keep last progress, got %d", job.Progress)
 	}
 
 	if !store.SetDone(job.ID, "job-1.zip") {
@@ -79,6 +101,9 @@ func TestStoreSettersUpdateStoredJob(t *testing.T) {
 	if job.Error != "" {
 		t.Fatalf("expected error to be cleared, got %q", job.Error)
 	}
+	if job.Progress != 100 {
+		t.Fatalf("expected progress %d, got %d", 100, job.Progress)
+	}
 }
 
 func TestStoreSettersReturnFalseForMissingJob(t *testing.T) {
@@ -89,6 +114,9 @@ func TestStoreSettersReturnFalseForMissingJob(t *testing.T) {
 	}
 	if store.SetFailed("missing", assertErr("zip failed")) {
 		t.Fatalf("expected SetFailed to fail for missing job")
+	}
+	if store.SetProgress("missing", 10) {
+		t.Fatalf("expected SetProgress to fail for missing job")
 	}
 	if store.SetDone("missing", "missing.zip") {
 		t.Fatalf("expected SetDone to fail for missing job")
