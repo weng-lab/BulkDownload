@@ -1,35 +1,31 @@
 package core
 
 import (
-	"log"
-	"os"
+	"context"
 	"path/filepath"
 	"time"
 )
 
-func StartCleanup(store *Store) {
-	ticker := time.NewTicker(CleanupTick)
+func SweepExpired(jobs *Jobs, jobsDir string, now time.Time) {
+	for _, job := range jobs.Expired(now) {
+		if job.Filename != "" {
+			_ = cleanupFile(filepath.Join(jobsDir, job.Filename))
+		}
+		jobs.Delete(job.ID)
+	}
+}
+
+func StartCleanup(ctx context.Context, jobs *Jobs, jobsDir string, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 
 	go func() {
-		for range ticker.C {
-			log.Printf("cleanup: sweep started (interval %s)", CleanupTick)
-			expired := store.Expired()
-			if len(expired) > 0 {
-				log.Printf("cleanup: found %d expired jobs", len(expired))
-			}
-
-			for _, job := range expired {
-				if job.Filename != "" {
-					path := filepath.Join(JobsDir, job.Filename)
-					if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-						log.Printf("cleanup: failed to remove %s: %v", path, err)
-					} else {
-						log.Printf("cleanup: removed %s", path)
-					}
-				}
-
-				log.Printf("cleanup: deleting job %s", job.ID)
-				store.Delete(job.ID)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				SweepExpired(jobs, jobsDir, now)
 			}
 		}
 	}()

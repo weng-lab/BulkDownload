@@ -2,12 +2,10 @@ package core
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
-	"time"
 )
 
 const downloadScriptTemplate = `#!/usr/bin/env bash
@@ -78,29 +76,32 @@ type scriptTemplateFile struct {
 	LineSuffix string
 }
 
-func ProcessScriptJob(store *Store, job *Job) {
-	store.SetStatus(job.ID, StatusProcessing)
-
-	log.Printf("script job %s processing started", job.ID)
-	time.Sleep(ProcessingDelay)
-
-	filename := job.ID + ".sh"
-	outPath := filepath.Join(JobsDir, filename)
-
-	if err := createDownloadScript(outPath, job.Files); err != nil {
-		log.Printf("script generation failed for job %s: %v", job.ID, err)
-		if removeErr := os.Remove(outPath); removeErr != nil && !os.IsNotExist(removeErr) {
-			log.Printf("cleanup failed script for job %s: %v", job.ID, removeErr)
-		}
-		store.SetFailed(job.ID, err)
-		return
+func (m *Manager) ProcessScriptJob(jobID string) error {
+	job, err := m.getJobOfType(jobID, JobTypeScript)
+	if err != nil {
+		return err
 	}
 
-	store.SetDone(job.ID, filename)
-	log.Printf("script job %s complete: %s", job.ID, outPath)
+	if err := m.setStatus(jobID, StatusProcessing); err != nil {
+		return err
+	}
+
+	filename := job.ID + ".sh"
+	outPath := filepath.Join(m.jobsDir, filename)
+	if err := createDownloadScript(outPath, m.publicBaseURL, m.downloadRootDir, job.Files); err != nil {
+		_ = cleanupFile(outPath)
+		_ = m.setFailed(jobID, err)
+		return err
+	}
+
+	if err := m.setDone(jobID, filename); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func createDownloadScript(dest string, files []string) error {
+func createDownloadScript(dest, baseURL, downloadRoot string, files []string) error {
 	f, err := os.Create(dest)
 	if err != nil {
 		return fmt.Errorf("create script file: %w", err)
@@ -120,8 +121,8 @@ func createDownloadScript(dest string, files []string) error {
 	}
 
 	data := scriptTemplateData{
-		BaseURL:      shellQuote(strings.TrimRight(PublicBaseURL, "/")),
-		DownloadRoot: shellQuote(DownloadRootDir),
+		BaseURL:      shellQuote(strings.TrimRight(baseURL, "/")),
+		DownloadRoot: shellQuote(downloadRoot),
 		MaxJobs:      3,
 		Files:        templateFiles,
 	}

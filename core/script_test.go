@@ -5,20 +5,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestCreateDownloadScriptWritesExpectedContent(t *testing.T) {
-	useTestRuntime(t, 3*time.Second, 5*time.Minute, 0)
-
 	scriptPath := filepath.Join(t.TempDir(), "download.sh")
-	if err := createDownloadScript(scriptPath, []string{"rna/accession.bigwig", "dna/sample.cram"}); err != nil {
-		t.Fatalf("create download script: %v", err)
+	if err := createDownloadScript(scriptPath, "https://download.mohd.org", "mohd_data", []string{"rna/accession.bigwig", "dna/sample.cram"}); err != nil {
+		t.Fatalf("createDownloadScript() error = %v", err)
 	}
 
 	data, err := os.ReadFile(scriptPath)
 	if err != nil {
-		t.Fatalf("read script: %v", err)
+		t.Fatalf("ReadFile() error = %v", err)
 	}
 	content := string(data)
 
@@ -35,42 +32,44 @@ func TestCreateDownloadScriptWritesExpectedContent(t *testing.T) {
 
 	for _, check := range checks {
 		if !strings.Contains(content, check) {
-			t.Fatalf("expected script to contain %q, got %q", check, content)
+			t.Fatalf("script missing %q", check)
 		}
 	}
 
 	info, err := os.Stat(scriptPath)
 	if err != nil {
-		t.Fatalf("stat script: %v", err)
+		t.Fatalf("Stat() error = %v", err)
 	}
 	if info.Mode().Perm() != 0o755 {
-		t.Fatalf("expected script permissions 755, got %o", info.Mode().Perm())
+		t.Fatalf("permissions = %o, want 755", info.Mode().Perm())
 	}
 }
 
-func TestProcessScriptJobCreatesScriptAndMarksDone(t *testing.T) {
-	useTestRuntime(t, 3*time.Second, 5*time.Minute, 100*time.Millisecond)
-
-	store := NewStore()
-	job, err := store.CreateJob([]string{"rna/accession.bigwig"})
-	if err != nil {
-		t.Fatalf("CreateJob returned error: %v", err)
+func TestManagerProcessScriptJobCreatesScriptAndMarksDone(t *testing.T) {
+	manager, jobs, config := testManager(t)
+	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
 	}
 
-	go ProcessScriptJob(store, job)
+	job, err := manager.CreateScriptJob([]string{"rna/accession.bigwig"})
+	if err != nil {
+		t.Fatalf("CreateScriptJob() error = %v", err)
+	}
 
-	waitFor(t, 500*time.Millisecond, 25*time.Millisecond, func() bool {
-		got, ok := store.Get(job.ID)
-		return ok && got.Status == StatusProcessing
-	}, "script job to reach processing")
+	if err := manager.ProcessScriptJob(job.ID); err != nil {
+		t.Fatalf("ProcessScriptJob() error = %v", err)
+	}
 
-	waitFor(t, 2*time.Second, 50*time.Millisecond, func() bool {
-		got, ok := store.Get(job.ID)
-		return ok && got.Status == StatusDone && got.Filename != "" && got.Progress == 100
-	}, "script job to reach done")
+	got, ok := jobs.Get(job.ID)
+	if !ok {
+		t.Fatalf("Get(%q) ok = false, want true", job.ID)
+	}
+	if got.Status != StatusDone || got.Progress != 100 || got.Filename == "" {
+		t.Fatalf("processed job = %#v, want done job with filename", got)
+	}
 
-	scriptPath := filepath.Join(JobsDir, job.Filename)
+	scriptPath := filepath.Join(config.JobsDir, got.Filename)
 	if _, err := os.Stat(scriptPath); err != nil {
-		t.Fatalf("expected script file to exist: %v", err)
+		t.Fatalf("Stat() error = %v", err)
 	}
 }
