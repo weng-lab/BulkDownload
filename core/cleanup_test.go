@@ -7,79 +7,50 @@ import (
 	"time"
 )
 
-func TestStartCleanupRemovesExpiredJobsAndFiles(t *testing.T) {
-	jobsDir := useTestRuntime(t, 3*time.Second, 200*time.Millisecond, 0)
+func TestSweepExpiredRemovesExpiredJobsAndFiles(t *testing.T) {
+	_, jobs, config := testManager(t)
+	now := time.Unix(100, 0)
 
-	store := NewStore()
 	filename := "expired.zip"
-	zipPath := filepath.Join(jobsDir, filename)
-	if err := os.WriteFile(zipPath, []byte("zip bytes"), 0o644); err != nil {
-		t.Fatalf("write zip file: %v", err)
+	archivePath := filepath.Join(config.JobsDir, filename)
+	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(archivePath, []byte("zip bytes"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	store.Set(&Job{
-		ID:        "expired-job",
-		Status:    StatusDone,
-		Filename:  filename,
-		ExpiresAt: time.Now().Add(-time.Second),
-	})
-	store.Set(&Job{
-		ID:        "active-job",
-		Status:    StatusDone,
-		ExpiresAt: time.Now().Add(time.Second),
-	})
-
-	StartCleanup(store)
-
-	waitFor(t, 2*time.Second, 50*time.Millisecond, func() bool {
-		_, expiredExists := store.Get("expired-job")
-		_, activeExists := store.Get("active-job")
-		_, err := os.Stat(zipPath)
-		return !expiredExists && activeExists && os.IsNotExist(err)
-	}, "cleanup to remove expired job and zip file")
-}
-
-func TestStartCleanupDeletesExpiredJobWhenFileMissing(t *testing.T) {
-	useTestRuntime(t, 3*time.Second, 200*time.Millisecond, 0)
-
-	store := NewStore()
-	store.Set(&Job{
-		ID:        "expired-missing-file",
-		Status:    StatusDone,
-		Filename:  "missing.zip",
-		ExpiresAt: time.Now().Add(-time.Second),
-	})
-
-	StartCleanup(store)
-
-	waitFor(t, 2*time.Second, 50*time.Millisecond, func() bool {
-		_, ok := store.Get("expired-missing-file")
-		return !ok
-	}, "cleanup to delete expired job with missing file")
-}
-
-func TestStartCleanupRemovesExpiredScriptJobsAndFiles(t *testing.T) {
-	useTestRuntime(t, 3*time.Second, 200*time.Millisecond, 0)
-
-	store := NewStore()
-	filename := "expired.sh"
-	scriptPath := filepath.Join(JobsDir, filename)
-	if err := os.WriteFile(scriptPath, []byte("#!/usr/bin/env bash\n"), 0o755); err != nil {
-		t.Fatalf("write script file: %v", err)
+	if err := jobs.Add(&Job{ID: "expired", Type: JobTypeZip, Status: StatusDone, Filename: filename, ExpiresAt: now.Add(-time.Second)}); err != nil {
+		t.Fatalf("Add(expired) error = %v", err)
+	}
+	if err := jobs.Add(&Job{ID: "active", Type: JobTypeZip, Status: StatusDone, ExpiresAt: now.Add(time.Second)}); err != nil {
+		t.Fatalf("Add(active) error = %v", err)
 	}
 
-	store.Set(&Job{
-		ID:        "expired-script-job",
-		Status:    StatusDone,
-		Filename:  filename,
-		ExpiresAt: time.Now().Add(-time.Second),
-	})
+	SweepExpired(jobs, config.JobsDir, now)
 
-	StartCleanup(store)
+	if _, ok := jobs.Get("expired"); ok {
+		t.Fatal("Get(expired) ok = true, want false")
+	}
+	if _, ok := jobs.Get("active"); !ok {
+		t.Fatal("Get(active) ok = false, want true")
+	}
+	if _, err := os.Stat(archivePath); !os.IsNotExist(err) {
+		t.Fatalf("Stat() error = %v, want not exist", err)
+	}
+}
 
-	waitFor(t, 2*time.Second, 50*time.Millisecond, func() bool {
-		_, exists := store.Get("expired-script-job")
-		_, err := os.Stat(scriptPath)
-		return !exists && os.IsNotExist(err)
-	}, "cleanup to remove expired script job and file")
+func TestSweepExpiredDeletesJobsWithMissingFiles(t *testing.T) {
+	_, jobs, config := testManager(t)
+	now := time.Unix(100, 0)
+
+	if err := jobs.Add(&Job{ID: "expired", Type: JobTypeScript, Status: StatusDone, Filename: "missing.sh", ExpiresAt: now.Add(-time.Second)}); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	SweepExpired(jobs, config.JobsDir, now)
+
+	if _, ok := jobs.Get("expired"); ok {
+		t.Fatal("Get(expired) ok = true, want false")
+	}
 }
