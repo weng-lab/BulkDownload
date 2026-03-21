@@ -64,6 +64,10 @@ func (m *Manager) ProcessTarballJob(jobID string) error {
 }
 
 func createZip(dest string, files []string, onProgress func(int)) error {
+	if err := validateArchiveInputs(files); err != nil {
+		return fmt.Errorf("validate zip inputs: %w", err)
+	}
+
 	total, err := totalFileSize(files)
 	if err != nil {
 		return fmt.Errorf("calculate zip progress: %w", err)
@@ -84,6 +88,8 @@ func createZip(dest string, files []string, onProgress func(int)) error {
 			return fmt.Errorf("add %s: %w", path, err)
 		}
 	}
+
+	reportArchiveComplete(total, onProgress)
 
 	return nil
 }
@@ -116,6 +122,10 @@ func addFileToZip(zw *zip.Writer, path string, reporter *progressReporter) error
 }
 
 func createTarball(dest string, files []string, onProgress func(int)) error {
+	if err := validateArchiveInputs(files); err != nil {
+		return fmt.Errorf("validate tarball inputs: %w", err)
+	}
+
 	total, err := totalFileSize(files)
 	if err != nil {
 		return fmt.Errorf("calculate tarball progress: %w", err)
@@ -140,7 +150,34 @@ func createTarball(dest string, files []string, onProgress func(int)) error {
 		}
 	}
 
+	reportArchiveComplete(total, onProgress)
+
 	return nil
+}
+
+func validateArchiveInputs(files []string) error {
+	if len(files) == 0 {
+		return fmt.Errorf("no files provided")
+	}
+
+	seen := make(map[string]string, len(files))
+	for _, path := range files {
+		base := filepath.Base(path)
+		if other, ok := seen[base]; ok {
+			return fmt.Errorf("duplicate archive basename %q for %q and %q", base, other, path)
+		}
+		seen[base] = path
+	}
+
+	return nil
+}
+
+func reportArchiveComplete(total int64, onProgress func(int)) {
+	if total <= 0 || onProgress == nil {
+		return
+	}
+
+	onProgress(100)
 }
 
 func addFileToTarball(tw *tar.Writer, path string, reporter *progressReporter) error {
