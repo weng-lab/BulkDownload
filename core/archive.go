@@ -64,7 +64,7 @@ func (m *Manager) ProcessTarballJob(jobID string) error {
 }
 
 func createZip(dest string, files []string, onProgress func(int)) error {
-	if err := validateArchiveInputs(files); err != nil {
+	if err := validateArchiveFileList(files); err != nil {
 		return fmt.Errorf("validate zip inputs: %w", err)
 	}
 
@@ -89,7 +89,9 @@ func createZip(dest string, files []string, onProgress func(int)) error {
 		}
 	}
 
-	reportArchiveComplete(total, onProgress)
+	if total > 0 && onProgress != nil {
+		onProgress(100)
+	}
 
 	return nil
 }
@@ -110,7 +112,7 @@ func addFileToZip(zw *zip.Writer, path string, reporter *progressReporter) error
 	if err != nil {
 		return err
 	}
-	header.Name = filepath.Base(path)
+	header.Name = filepath.ToSlash(path)
 	header.Method = zip.Deflate
 
 	w, err := zw.CreateHeader(header)
@@ -122,7 +124,7 @@ func addFileToZip(zw *zip.Writer, path string, reporter *progressReporter) error
 }
 
 func createTarball(dest string, files []string, onProgress func(int)) error {
-	if err := validateArchiveInputs(files); err != nil {
+	if err := validateArchiveFileList(files); err != nil {
 		return fmt.Errorf("validate tarball inputs: %w", err)
 	}
 
@@ -150,34 +152,25 @@ func createTarball(dest string, files []string, onProgress func(int)) error {
 		}
 	}
 
-	reportArchiveComplete(total, onProgress)
+	if total > 0 && onProgress != nil {
+		onProgress(100)
+	}
 
 	return nil
 }
 
-func validateArchiveInputs(files []string) error {
+func validateArchiveFileList(files []string) error {
 	if len(files) == 0 {
 		return fmt.Errorf("no files provided")
 	}
 
-	seen := make(map[string]string, len(files))
 	for _, path := range files {
-		base := filepath.Base(path)
-		if other, ok := seen[base]; ok {
-			return fmt.Errorf("duplicate archive basename %q for %q and %q", base, other, path)
+		if filepath.IsAbs(path) {
+			return fmt.Errorf("absolute paths are not supported: %s", path)
 		}
-		seen[base] = path
 	}
 
 	return nil
-}
-
-func reportArchiveComplete(total int64, onProgress func(int)) {
-	if total <= 0 || onProgress == nil {
-		return
-	}
-
-	onProgress(100)
 }
 
 func addFileToTarball(tw *tar.Writer, path string, reporter *progressReporter) error {
@@ -196,7 +189,7 @@ func addFileToTarball(tw *tar.Writer, path string, reporter *progressReporter) e
 	if err != nil {
 		return err
 	}
-	header.Name = filepath.Base(path)
+	header.Name = filepath.ToSlash(path)
 
 	if err := tw.WriteHeader(header); err != nil {
 		return err
