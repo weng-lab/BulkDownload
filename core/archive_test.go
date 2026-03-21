@@ -32,38 +32,30 @@ func TestCreateArchive(t *testing.T) {
 		checkProg bool
 	}{
 		{
-			name:     "zip writes flat archive with progress",
+			name:     "zip preserves relative paths with progress",
 			create:   createZip,
 			read:     readZipArchive,
 			destName: "result.zip",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{
-					writeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents"),
-					writeTestFile(t, filepath.Join(root, "nested", "bravo.txt"), "bravo contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "nested", "bravo.txt"), "bravo contents"),
 				}
-			},
-			want: map[string]string{
-				"alpha.txt": "alpha contents",
-				"bravo.txt": "bravo contents",
 			},
 			checkProg: true,
 		},
 		{
-			name:     "tarball writes flat archive with progress",
+			name:     "tarball preserves relative paths with progress",
 			create:   createTarball,
 			read:     readTarballArchive,
 			destName: "result.tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{
-					writeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents"),
-					writeTestFile(t, filepath.Join(root, "nested", "bravo.txt"), "bravo contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "nested", "bravo.txt"), "bravo contents"),
 				}
-			},
-			want: map[string]string{
-				"alpha.txt": "alpha contents",
-				"bravo.txt": "bravo contents",
 			},
 			checkProg: true,
 		},
@@ -88,28 +80,50 @@ func TestCreateArchive(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:     "zip rejects duplicate basenames",
+			name:     "zip allows duplicate basenames in different directories",
 			create:   createZip,
+			read:     readZipArchive,
 			destName: "result.zip",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{
-					writeTestFile(t, filepath.Join(root, "first", "shared.txt"), "alpha contents"),
-					writeTestFile(t, filepath.Join(root, "second", "shared.txt"), "bravo contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "first", "shared.txt"), "alpha contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "second", "shared.txt"), "bravo contents"),
 				}
 			},
-			wantErr: true,
+			checkProg: true,
 		},
 		{
-			name:     "tarball rejects duplicate basenames",
+			name:     "tarball allows duplicate basenames in different directories",
 			create:   createTarball,
+			read:     readTarballArchive,
 			destName: "result.tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{
-					writeTestFile(t, filepath.Join(root, "first", "shared.txt"), "alpha contents"),
-					writeTestFile(t, filepath.Join(root, "second", "shared.txt"), "bravo contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "first", "shared.txt"), "alpha contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "second", "shared.txt"), "bravo contents"),
 				}
+			},
+			checkProg: true,
+		},
+		{
+			name:     "zip rejects absolute file paths",
+			create:   createZip,
+			destName: "result.zip",
+			makeFiles: func(t *testing.T, root string) []string {
+				t.Helper()
+				return []string{writeAbsoluteTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")}
+			},
+			wantErr: true,
+		},
+		{
+			name:     "tarball rejects absolute file paths",
+			create:   createTarball,
+			destName: "result.tar.gz",
+			makeFiles: func(t *testing.T, root string) []string {
+				t.Helper()
+				return []string{writeAbsoluteTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")}
 			},
 			wantErr: true,
 		},
@@ -120,7 +134,7 @@ func TestCreateArchive(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
+			root := testArchiveRoot(t)
 			dest := filepath.Join(root, tt.destName)
 			files := tt.makeFiles(t, root)
 
@@ -139,7 +153,19 @@ func TestCreateArchive(t *testing.T) {
 				t.Fatalf("create archive error = %v", err)
 			}
 
-			if diff := cmp.Diff(tt.want, tt.read(t, dest)); diff != "" {
+			wantContents := tt.want
+			if wantContents == nil {
+				wantContents = make(map[string]string, len(files))
+				for _, file := range files {
+					data, err := os.ReadFile(file)
+					if err != nil {
+						t.Fatalf("ReadFile(%q) error = %v", file, err)
+					}
+					wantContents[filepath.ToSlash(file)] = string(data)
+				}
+			}
+
+			if diff := cmp.Diff(wantContents, tt.read(t, dest)); diff != "" {
 				t.Errorf("archive contents mismatch (-want +got):\n%s", diff)
 			}
 			if tt.checkProg {
@@ -167,7 +193,10 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 			archiveSuffix: ".zip",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
-				return []string{writeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")}
+				return []string{
+					writeRelativeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "nested", "shared.txt"), "bravo contents"),
+				}
 			},
 		},
 		{
@@ -178,7 +207,10 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 			archiveSuffix: ".tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
-				return []string{writeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")}
+				return []string{
+					writeRelativeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "nested", "shared.txt"), "bravo contents"),
+				}
 			},
 		},
 		{
@@ -230,7 +262,7 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:          "zip fails for duplicate basenames",
+			name:          "zip allows duplicate basenames in different directories",
 			jobType:       JobTypeZip,
 			createJob:     (*Manager).CreateZipJob,
 			processJob:    (*Manager).ProcessZipJob,
@@ -238,14 +270,13 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{
-					writeTestFile(t, filepath.Join(root, "first", "shared.txt"), "alpha contents"),
-					writeTestFile(t, filepath.Join(root, "second", "shared.txt"), "bravo contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "first", "shared.txt"), "alpha contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "second", "shared.txt"), "bravo contents"),
 				}
 			},
-			wantErr: true,
 		},
 		{
-			name:          "tarball fails for duplicate basenames",
+			name:          "tarball allows duplicate basenames in different directories",
 			jobType:       JobTypeTarball,
 			createJob:     (*Manager).CreateTarballJob,
 			processJob:    (*Manager).ProcessTarballJob,
@@ -253,9 +284,32 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{
-					writeTestFile(t, filepath.Join(root, "first", "shared.txt"), "alpha contents"),
-					writeTestFile(t, filepath.Join(root, "second", "shared.txt"), "bravo contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "first", "shared.txt"), "alpha contents"),
+					writeRelativeTestFile(t, filepath.Join(root, "second", "shared.txt"), "bravo contents"),
 				}
+			},
+		},
+		{
+			name:          "zip fails for absolute path",
+			jobType:       JobTypeZip,
+			createJob:     (*Manager).CreateZipJob,
+			processJob:    (*Manager).ProcessZipJob,
+			archiveSuffix: ".zip",
+			makeFiles: func(t *testing.T, root string) []string {
+				t.Helper()
+				return []string{writeAbsoluteTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")}
+			},
+			wantErr: true,
+		},
+		{
+			name:          "tarball fails for absolute path",
+			jobType:       JobTypeTarball,
+			createJob:     (*Manager).CreateTarballJob,
+			processJob:    (*Manager).ProcessTarballJob,
+			archiveSuffix: ".tar.gz",
+			makeFiles: func(t *testing.T, root string) []string {
+				t.Helper()
+				return []string{writeAbsoluteTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")}
 			},
 			wantErr: true,
 		},
@@ -269,7 +323,7 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 				t.Fatalf("MkdirAll(%q) error = %v", config.JobsDir, err)
 			}
 
-			files := tt.makeFiles(t, t.TempDir())
+			files := tt.makeFiles(t, testArchiveRoot(t))
 			job, err := tt.createJob(manager, files)
 			if err != nil {
 				t.Fatalf("Create%vJob() error = %v", tt.jobType, err)
@@ -313,11 +367,36 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("processed job mismatch (-want +got):\n%s", diff)
 			}
-			if _, err := os.Stat(filepath.Join(config.JobsDir, got.Filename)); err != nil {
-				t.Fatalf("Stat(%q) error = %v", filepath.Join(config.JobsDir, got.Filename), err)
+			archivePath := filepath.Join(config.JobsDir, got.Filename)
+			if _, err := os.Stat(archivePath); err != nil {
+				t.Fatalf("Stat(%q) error = %v", archivePath, err)
+			}
+
+			wantContents := make(map[string]string, len(files))
+			for _, file := range files {
+				data, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatalf("ReadFile(%q) error = %v", file, err)
+				}
+				wantContents[filepath.ToSlash(file)] = string(data)
+			}
+
+			gotContents := readArchiveByType(t, archivePath, tt.jobType)
+			if diff := cmp.Diff(wantContents, gotContents); diff != "" {
+				t.Errorf("archive contents mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
+}
+
+func readArchiveByType(t *testing.T, path string, jobType JobType) map[string]string {
+	t.Helper()
+
+	if jobType == JobTypeZip {
+		return readZipArchive(t, path)
+	}
+
+	return readTarballArchive(t, path)
 }
 
 func assertApproxJobTTL(t *testing.T, expiresAt time.Time, wantTTL time.Duration) {
@@ -451,4 +530,44 @@ func writeTestFile(t *testing.T, path, contents string) string {
 	}
 
 	return path
+}
+
+func writeRelativeTestFile(t *testing.T, path, contents string) string {
+	t.Helper()
+
+	absPath := writeTestFile(t, path, contents)
+	relPath, err := filepath.Rel(".", absPath)
+	if err != nil {
+		t.Fatalf("Rel(%q) error = %v", absPath, err)
+	}
+
+	return relPath
+}
+
+func writeAbsoluteTestFile(t *testing.T, path, contents string) string {
+	t.Helper()
+
+	relPath := writeTestFile(t, path, contents)
+	absPath, err := filepath.Abs(relPath)
+	if err != nil {
+		t.Fatalf("Abs(%q) error = %v", relPath, err)
+	}
+
+	return absPath
+}
+
+func testArchiveRoot(t *testing.T) string {
+	t.Helper()
+
+	root, err := os.MkdirTemp(".", "archive-test-*")
+	if err != nil {
+		t.Fatalf("MkdirTemp() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(root); err != nil {
+			t.Fatalf("RemoveAll(%q) error = %v", root, err)
+		}
+	})
+
+	return root
 }

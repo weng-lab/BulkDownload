@@ -102,6 +102,10 @@ func (m *Manager) ProcessScriptJob(jobID string) error {
 }
 
 func createDownloadScript(dest, baseURL, downloadRoot string, files []string) error {
+	if len(files) == 0 {
+		return fmt.Errorf("no files provided")
+	}
+
 	f, err := os.Create(dest)
 	if err != nil {
 		return fmt.Errorf("create script file: %w", err)

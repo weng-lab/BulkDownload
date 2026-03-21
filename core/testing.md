@@ -9,14 +9,14 @@
 - Good test helper pattern with `testManager()`
 - Internal package structure for unexported functions
 - Real archive validation (reads back contents)
-
-**NEEDS CHANGE:**
-- Hand-rolled comparisons instead of `cmp.Diff` (lines 61-69, 102, 132, 200-208)
-- Not table-driven (zip and tarball tests are nearly identical)
-- Missing `t.Parallel()` for independent tests
-- Hand-rolled time comparison (lines 89-90) instead of `cmpopts.EquateApprox`
-- No subtests for complex scenarios
-- Insufficient edge case coverage (empty file list, duplicate basenames)
+- Uses table-driven tests with subtests for zip/tarball variants and failure cases
+- Uses `cmp.Diff` for archive content and processed job comparisons
+- Uses `cmpopts.EquateApproxTime` for TTL assertions
+- Adds `t.Parallel()` for independent creator tests
+- Preserves relative file paths in archives instead of flattening to basenames
+- Covers empty file list and absolute-path validation
+- Allows duplicate basenames when they live in different directories
+- Verifies success progress is monotonic and ends at `100`
 
 ---
 
