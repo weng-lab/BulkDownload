@@ -12,6 +12,7 @@ const maxJobIDAttempts = 100
 type Manager struct {
 	jobs            *Jobs
 	jobsDir         string
+	sourceRootDir   string
 	publicBaseURL   string
 	downloadRootDir string
 	jobTTL          time.Duration
@@ -82,6 +83,7 @@ func newManager(jobs *Jobs, config Config, generateID func() string) *Manager {
 	return &Manager{
 		jobs:            jobs,
 		jobsDir:         config.JobsDir,
+		sourceRootDir:   config.SourceRootDir,
 		publicBaseURL:   config.PublicBaseURL,
 		downloadRootDir: config.DownloadRootDir,
 		jobTTL:          config.JobTTL,

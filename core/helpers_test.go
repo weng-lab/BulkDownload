@@ -1,6 +1,7 @@
 package core
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -47,8 +48,27 @@ func clearConfigEnv(t *testing.T) {
 		"DOWNLOAD_ROOT_DIR",
 		"PORT",
 		"JOB_TTL",
+		"ZIP_TTL",
 		"CLEANUP_TICK",
 	} {
 		t.Setenv(key, "")
 	}
+}
+
+func withWorkingDir(t *testing.T, dir string) {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir(%q) error = %v", dir, err)
+	}
+
+	t.Cleanup(func() {
+		if err := os.Chdir(wd); err != nil {
+			t.Fatalf("restore working dir %q: %v", wd, err)
+		}
+	})
 }

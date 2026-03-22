@@ -21,7 +21,7 @@ func (m *Manager) ProcessZipJob(jobID string) error {
 
 	filename := job.ID + ".zip"
 	outPath := filepath.Join(m.jobsDir, filename)
-	if err := createZip(outPath, job.Files, func(progress int) {
+	if err := createZipFromRoot(outPath, m.sourceRootDir, job.Files, func(progress int) {
 		_ = m.setProgress(jobID, progress)
 	}); err != nil {
 		_ = cleanupFile(outPath)
@@ -48,7 +48,7 @@ func (m *Manager) ProcessTarballJob(jobID string) error {
 
 	filename := job.ID + ".tar.gz"
 	outPath := filepath.Join(m.jobsDir, filename)
-	if err := createTarball(outPath, job.Files, func(progress int) {
+	if err := createTarballFromRoot(outPath, m.sourceRootDir, job.Files, func(progress int) {
 		_ = m.setProgress(jobID, progress)
 	}); err != nil {
 		_ = cleanupFile(outPath)
@@ -64,11 +64,17 @@ func (m *Manager) ProcessTarballJob(jobID string) error {
 }
 
 func createZip(dest string, files []string, onProgress func(int)) error {
+	return createZipFromRoot(dest, "", files, onProgress)
+}
+
+func createZipFromRoot(dest, sourceRoot string, files []string, onProgress func(int)) error {
 	if err := validateArchiveFileList(files); err != nil {
 		return fmt.Errorf("validate zip inputs: %w", err)
 	}
 
-	total, err := totalFileSize(files)
+	inputs := archiveInputs(sourceRoot, files)
+
+	total, err := totalFileSize(inputs.sourcePaths())
 	if err != nil {
 		return fmt.Errorf("calculate zip progress: %w", err)
 	}
@@ -83,9 +89,9 @@ func createZip(dest string, files []string, onProgress func(int)) error {
 	zw := zip.NewWriter(f)
 	defer zw.Close()
 
-	for _, path := range files {
-		if err := addFileToZip(zw, path, reporter); err != nil {
-			return fmt.Errorf("add %s: %w", path, err)
+	for _, input := range inputs {
+		if err := addFileToZip(zw, input, reporter); err != nil {
+			return fmt.Errorf("add %s: %w", input.archivePath, err)
 		}
 	}
 
@@ -96,8 +102,8 @@ func createZip(dest string, files []string, onProgress func(int)) error {
 	return nil
 }
 
-func addFileToZip(zw *zip.Writer, path string, reporter *progressReporter) error {
-	src, err := os.Open(path)
+func addFileToZip(zw *zip.Writer, input archiveInput, reporter *progressReporter) error {
+	src, err := os.Open(input.sourcePath)
 	if err != nil {
 		return err
 	}
@@ -112,7 +118,7 @@ func addFileToZip(zw *zip.Writer, path string, reporter *progressReporter) error
 	if err != nil {
 		return err
 	}
-	header.Name = filepath.ToSlash(path)
+	header.Name = filepath.ToSlash(input.archivePath)
 	header.Method = zip.Deflate
 
 	w, err := zw.CreateHeader(header)
@@ -124,11 +130,17 @@ func addFileToZip(zw *zip.Writer, path string, reporter *progressReporter) error
 }
 
 func createTarball(dest string, files []string, onProgress func(int)) error {
+	return createTarballFromRoot(dest, "", files, onProgress)
+}
+
+func createTarballFromRoot(dest, sourceRoot string, files []string, onProgress func(int)) error {
 	if err := validateArchiveFileList(files); err != nil {
 		return fmt.Errorf("validate tarball inputs: %w", err)
 	}
 
-	total, err := totalFileSize(files)
+	inputs := archiveInputs(sourceRoot, files)
+
+	total, err := totalFileSize(inputs.sourcePaths())
 	if err != nil {
 		return fmt.Errorf("calculate tarball progress: %w", err)
 	}
@@ -146,9 +158,9 @@ func createTarball(dest string, files []string, onProgress func(int)) error {
 	tw := tar.NewWriter(gzw)
 	defer tw.Close()
 
-	for _, path := range files {
-		if err := addFileToTarball(tw, path, reporter); err != nil {
-			return fmt.Errorf("add %s: %w", path, err)
+	for _, input := range inputs {
+		if err := addFileToTarball(tw, input, reporter); err != nil {
+			return fmt.Errorf("add %s: %w", input.archivePath, err)
 		}
 	}
 
@@ -173,8 +185,42 @@ func validateArchiveFileList(files []string) error {
 	return nil
 }
 
-func addFileToTarball(tw *tar.Writer, path string, reporter *progressReporter) error {
-	src, err := os.Open(path)
+func addFileToTarball(tw *tar.Writer, input archiveInput, reporter *progressReporter) error {
+	return addArchiveFileToTarball(tw, input, reporter)
+}
+
+type archiveInput struct {
+	sourcePath  string
+	archivePath string
+}
+
+type archiveInputList []archiveInput
+
+func archiveInputs(sourceRoot string, files []string) archiveInputList {
+	inputs := make(archiveInputList, 0, len(files))
+	for _, file := range files {
+		input := archiveInput{
+			sourcePath:  file,
+			archivePath: file,
+		}
+		if sourceRoot != "" {
+			input.sourcePath = filepath.Join(sourceRoot, file)
+		}
+		inputs = append(inputs, input)
+	}
+	return inputs
+}
+
+func (inputs archiveInputList) sourcePaths() []string {
+	paths := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		paths = append(paths, input.sourcePath)
+	}
+	return paths
+}
+
+func addArchiveFileToTarball(tw *tar.Writer, input archiveInput, reporter *progressReporter) error {
+	src, err := os.Open(input.sourcePath)
 	if err != nil {
 		return err
 	}
@@ -189,7 +235,7 @@ func addFileToTarball(tw *tar.Writer, path string, reporter *progressReporter) e
 	if err != nil {
 		return err
 	}
-	header.Name = filepath.ToSlash(path)
+	header.Name = filepath.ToSlash(input.archivePath)
 
 	if err := tw.WriteHeader(header); err != nil {
 		return err

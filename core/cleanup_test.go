@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -106,7 +105,7 @@ func TestSweepExpired(t *testing.T) {
 	}
 }
 
-func TestStartCleanup_SweepsOnTickAndStopsOnCancel(t *testing.T) {
+func TestStartCleanup_SweepsOnTick(t *testing.T) {
 	t.Parallel()
 
 	jobsDir := t.TempDir()
@@ -128,8 +127,7 @@ func TestStartCleanup_SweepsOnTickAndStopsOnCancel(t *testing.T) {
 		t.Fatalf("WriteFile(%q) error = %v", archivePath, err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	StartCleanup(ctx, jobs, jobsDir, 10*time.Millisecond)
+	StartCleanup(jobs, jobsDir, 10*time.Millisecond)
 
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
@@ -144,24 +142,5 @@ func TestStartCleanup_SweepsOnTickAndStopsOnCancel(t *testing.T) {
 	}
 	if _, err := os.Stat(archivePath); !os.IsNotExist(err) {
 		t.Fatalf("Stat(%q) error = %v, want not exist", archivePath, err)
-	}
-
-	cancel()
-	time.Sleep(30 * time.Millisecond)
-
-	activeJob := &Job{
-		ID:        "active",
-		Type:      JobTypeZip,
-		Status:    StatusDone,
-		ExpiresAt: time.Now().Add(-time.Second),
-	}
-	if err := jobs.Add(activeJob); err != nil {
-		t.Fatalf("Add(%q) error = %v", activeJob.ID, err)
-	}
-
-	time.Sleep(30 * time.Millisecond)
-
-	if _, ok := jobs.Get(activeJob.ID); !ok {
-		t.Fatal("Get(active) ok = false, want true after cancel")
 	}
 }

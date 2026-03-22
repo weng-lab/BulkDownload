@@ -13,259 +13,130 @@ import (
 	"github.com/jair/bulkdownload/core"
 )
 
-func useTestJobsDir(t *testing.T) string {
-	t.Helper()
-
-	t.Cleanup(func() {
-		core.LoadConfig()
-	})
-
-	jobsDir := filepath.Join(t.TempDir(), "jobs")
-	t.Setenv("JOBS_DIR", jobsDir)
-	t.Setenv("SOURCE_ROOT_DIR", "")
-	t.Setenv("PUBLIC_BASE_URL", "https://download.mohd.org")
-	t.Setenv("DOWNLOAD_ROOT_DIR", "mohd_data")
-	core.LoadConfig()
-
-	if err := os.MkdirAll(core.JobsDir, 0o755); err != nil {
-		t.Fatalf("create jobs dir: %v", err)
-	}
-
-	return jobsDir
+type handlerFixture struct {
+	config  core.Config
+	jobs    *core.Jobs
+	manager *core.Manager
 }
 
-func useTestSourceRootDir(t *testing.T) string {
+func newHandlerFixture(t *testing.T) handlerFixture {
 	t.Helper()
 
-	t.Cleanup(func() {
-		core.LoadConfig()
-	})
-
-	sourceRootDir := filepath.Join(t.TempDir(), "source")
-	if err := os.MkdirAll(sourceRootDir, 0o755); err != nil {
+	root := t.TempDir()
+	config := core.Config{
+		JobsDir:         filepath.Join(root, "jobs"),
+		SourceRootDir:   filepath.Join(root, "source"),
+		PublicBaseURL:   "https://download.mohd.org",
+		DownloadRootDir: "mohd_data",
+		Port:            "0",
+		JobTTL:          3 * time.Second,
+		CleanupTick:     time.Minute,
+	}
+	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
+		t.Fatalf("create jobs dir: %v", err)
+	}
+	if err := os.MkdirAll(config.SourceRootDir, 0o755); err != nil {
 		t.Fatalf("create source root dir: %v", err)
 	}
 
-	t.Setenv("SOURCE_ROOT_DIR", sourceRootDir)
-	core.LoadConfig()
-
-	return sourceRootDir
-}
-
-func TestHandleCreateZipReturnsExactMissingFileError(t *testing.T) {
-	store := core.NewStore()
-	req := httptest.NewRequest(http.MethodPost, "/zip", strings.NewReader(`{"files":["testdata/does-not-exist.txt"]}`))
-	rec := httptest.NewRecorder()
-
-	HandleCreateZip(store).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-	const wantBody = "file not found: testdata/does-not-exist.txt\n"
-	if rec.Body.String() != wantBody {
-		t.Fatalf("expected body %q, got %q", wantBody, rec.Body.String())
+	jobs := core.NewJobs()
+	return handlerFixture{
+		config:  config,
+		jobs:    jobs,
+		manager: core.NewManager(jobs, config),
 	}
 }
 
-func TestHandleCreateZipAcceptsValidRequest(t *testing.T) {
-	store := core.NewStore()
-	useTestJobsDir(t)
-	tempDir := t.TempDir()
-	filePath := filepath.Join(tempDir, "alpha.txt")
-	if err := os.WriteFile(filePath, []byte("alpha contents"), 0o644); err != nil {
-		t.Fatalf("write test file: %v", err)
+func writeSourceFile(t *testing.T, root, relPath, contents string) string {
+	t.Helper()
+
+	path := filepath.Join(root, relPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create source dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write source file: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/zip", strings.NewReader(`{"files":["`+filePath+`"]}`))
-	rec := httptest.NewRecorder()
-
-	HandleCreateZip(store).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
-	}
-
-	var got JobResponse
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if got.ID == "" {
-		t.Fatalf("expected response to include job id")
-	}
-	if got.ExpiresAt.IsZero() {
-		t.Fatalf("expected response to include expires_at")
-	}
-
-	job, ok := store.Get(got.ID)
-	if !ok {
-		t.Fatalf("expected job %q to be stored", got.ID)
-	}
-	if len(job.Files) != 1 || job.Files[0] != filePath {
-		t.Fatalf("expected stored job files to contain %q, got %#v", filePath, job.Files)
-	}
-	if job.Status != core.StatusPending && job.Status != core.StatusProcessing {
-		t.Fatalf("expected stored job status to be pending or processing, got %q", job.Status)
-	}
-	if time.Until(got.ExpiresAt) <= 0 {
-		t.Fatalf("expected expires_at to be in the future")
-	}
-	if job.Filename != "" {
-		t.Fatalf("expected filename to be empty before zip completes, got %q", job.Filename)
-	}
-	if job.Error != "" {
-		t.Fatalf("expected error to be empty, got %q", job.Error)
-	}
-	if job.Filename != "" {
-		_ = os.Remove(filepath.Join(core.JobsDir, job.Filename))
-	}
-	store.Delete(got.ID)
+	return path
 }
 
-func TestHandleCreateZipResolvesRelativePathFromSourceRoot(t *testing.T) {
-	store := core.NewStore()
-	useTestJobsDir(t)
-	sourceRootDir := useTestSourceRootDir(t)
+func TestHandleCreateArchiveAcceptsValidRequest(t *testing.T) {
+	t.Parallel()
 
-	filePath := filepath.Join(sourceRootDir, "nested", "alpha.txt")
-	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
-		t.Fatalf("create nested source dir: %v", err)
-	}
-	if err := os.WriteFile(filePath, []byte("alpha contents"), 0o644); err != nil {
-		t.Fatalf("write test file: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/zip", strings.NewReader(`{"files":["nested/alpha.txt"]}`))
-	rec := httptest.NewRecorder()
-
-	HandleCreateZip(store).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
-	}
-
-	var got JobResponse
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-		t.Fatalf("decode response: %v", err)
+	tests := []struct {
+		name        string
+		path        string
+		handler     func(handlerFixture) http.HandlerFunc
+		wantJobType core.JobType
+	}{
+		{
+			name:        "zip",
+			path:        "/zip",
+			handler:     func(f handlerFixture) http.HandlerFunc { return HandleCreateZip(f.manager, f.config) },
+			wantJobType: core.JobTypeZip,
+		},
+		{
+			name:        "tarball",
+			path:        "/tarball",
+			handler:     func(f handlerFixture) http.HandlerFunc { return HandleCreateTarball(f.manager, f.config) },
+			wantJobType: core.JobTypeTarball,
+		},
 	}
 
-	job, ok := store.Get(got.ID)
-	if !ok {
-		t.Fatalf("expected job %q to be stored", got.ID)
-	}
-	if len(job.Files) != 1 || job.Files[0] != filePath {
-		t.Fatalf("expected stored job files to contain %q, got %#v", filePath, job.Files)
-	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	store.Delete(got.ID)
-}
+			fixture := newHandlerFixture(t)
+			writeSourceFile(t, fixture.config.SourceRootDir, "nested/alpha.txt", "alpha contents")
 
-func TestHandleCreateZipRejectsPathOutsideSourceRoot(t *testing.T) {
-	store := core.NewStore()
-	useTestJobsDir(t)
-	useTestSourceRootDir(t)
+			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(`{"files":["nested/alpha.txt"]}`))
+			rec := httptest.NewRecorder()
 
-	req := httptest.NewRequest(http.MethodPost, "/zip", strings.NewReader(`{"files":["../secret.txt"]}`))
-	rec := httptest.NewRecorder()
+			tt.handler(fixture).ServeHTTP(rec, req)
 
-	HandleCreateZip(store).ServeHTTP(rec, req)
+			if rec.Code != http.StatusAccepted {
+				t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
+			}
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-	const wantBody = "file path cannot escape source root: ../secret.txt\n"
-	if rec.Body.String() != wantBody {
-		t.Fatalf("expected body %q, got %q", wantBody, rec.Body.String())
+			var got JobResponse
+			if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if got.ID == "" {
+				t.Fatal("expected response to include job id")
+			}
+			if got.ExpiresAt.IsZero() {
+				t.Fatal("expected response to include expires_at")
+			}
+
+			job, ok := fixture.jobs.Get(got.ID)
+			if !ok {
+				t.Fatalf("expected job %q to be stored", got.ID)
+			}
+			if len(job.Files) != 1 || job.Files[0] != "nested/alpha.txt" {
+				t.Fatalf("expected stored files [%q], got %#v", "nested/alpha.txt", job.Files)
+			}
+			if job.Type != tt.wantJobType {
+				t.Fatalf("expected job type %q, got %q", tt.wantJobType, job.Type)
+			}
+			if time.Until(got.ExpiresAt) <= 0 {
+				t.Fatal("expected expires_at to be in the future")
+			}
+		})
 	}
 }
 
-func TestHandleCreateTarballReturnsExactMissingFileError(t *testing.T) {
-	store := core.NewStore()
-	req := httptest.NewRequest(http.MethodPost, "/tarball", strings.NewReader(`{"files":["testdata/does-not-exist.txt"]}`))
+func TestHandleCreateScriptAcceptsValidRequest(t *testing.T) {
+	t.Parallel()
+
+	fixture := newHandlerFixture(t)
+	req := httptest.NewRequest(http.MethodPost, "/script", strings.NewReader(`{"files":["rna/accession.bigwig","dna/sample.cram"]}`))
 	rec := httptest.NewRecorder()
 
-	HandleCreateTarball(store).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-	const wantBody = "file not found: testdata/does-not-exist.txt\n"
-	if rec.Body.String() != wantBody {
-		t.Fatalf("expected body %q, got %q", wantBody, rec.Body.String())
-	}
-}
-
-func TestHandleCreateTarballAcceptsValidRequest(t *testing.T) {
-	store := core.NewStore()
-	useTestJobsDir(t)
-	tempDir := t.TempDir()
-	filePath := filepath.Join(tempDir, "alpha.txt")
-	if err := os.WriteFile(filePath, []byte("alpha contents"), 0o644); err != nil {
-		t.Fatalf("write test file: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/tarball", strings.NewReader(`{"files":["`+filePath+`"]}`))
-	rec := httptest.NewRecorder()
-
-	HandleCreateTarball(store).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
-	}
-
-	var got JobResponse
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if got.ID == "" {
-		t.Fatalf("expected response to include job id")
-	}
-	if got.ExpiresAt.IsZero() {
-		t.Fatalf("expected response to include expires_at")
-	}
-
-	job, ok := store.Get(got.ID)
-	if !ok {
-		t.Fatalf("expected job %q to be stored", got.ID)
-	}
-	if len(job.Files) != 1 || job.Files[0] != filePath {
-		t.Fatalf("expected stored job files to contain %q, got %#v", filePath, job.Files)
-	}
-	if job.Status != core.StatusPending && job.Status != core.StatusProcessing {
-		t.Fatalf("expected stored job status to be pending or processing, got %q", job.Status)
-	}
-	if time.Until(got.ExpiresAt) <= 0 {
-		t.Fatalf("expected expires_at to be in the future")
-	}
-	if job.Filename != "" {
-		t.Fatalf("expected filename to be empty before tarball completes, got %q", job.Filename)
-	}
-	if job.Error != "" {
-		t.Fatalf("expected error to be empty, got %q", job.Error)
-	}
-	if job.Filename != "" {
-		_ = os.Remove(filepath.Join(core.JobsDir, job.Filename))
-	}
-	store.Delete(got.ID)
-}
-
-func TestHandleCreateTarballResolvesRelativePathFromSourceRoot(t *testing.T) {
-	store := core.NewStore()
-	useTestJobsDir(t)
-	sourceRootDir := useTestSourceRootDir(t)
-
-	filePath := filepath.Join(sourceRootDir, "nested", "alpha.txt")
-	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
-		t.Fatalf("create nested source dir: %v", err)
-	}
-	if err := os.WriteFile(filePath, []byte("alpha contents"), 0o644); err != nil {
-		t.Fatalf("write test file: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/tarball", strings.NewReader(`{"files":["nested/alpha.txt"]}`))
-	rec := httptest.NewRecorder()
-
-	HandleCreateTarball(store).ServeHTTP(rec, req)
+	HandleCreateScript(fixture.manager).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
@@ -276,45 +147,115 @@ func TestHandleCreateTarballResolvesRelativePathFromSourceRoot(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 
-	job, ok := store.Get(got.ID)
+	job, ok := fixture.jobs.Get(got.ID)
 	if !ok {
 		t.Fatalf("expected job %q to be stored", got.ID)
 	}
-	if len(job.Files) != 1 || job.Files[0] != filePath {
-		t.Fatalf("expected stored job files to contain %q, got %#v", filePath, job.Files)
+	if want := []string{"rna/accession.bigwig", "dna/sample.cram"}; len(job.Files) != len(want) || job.Files[0] != want[0] || job.Files[1] != want[1] {
+		t.Fatalf("expected normalized files %#v, got %#v", want, job.Files)
 	}
 
-	store.Delete(got.ID)
+	waitForJobDone(t, fixture.jobs, got.ID)
 }
 
-func TestHandleCreateTarballRejectsPathOutsideSourceRoot(t *testing.T) {
-	store := core.NewStore()
-	useTestJobsDir(t)
-	useTestSourceRootDir(t)
+func TestHandleCreateRejectsInvalidRequests(t *testing.T) {
+	t.Parallel()
 
-	req := httptest.NewRequest(http.MethodPost, "/tarball", strings.NewReader(`{"files":["../secret.txt"]}`))
-	rec := httptest.NewRecorder()
-
-	HandleCreateTarball(store).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	tests := []struct {
+		name        string
+		handler     func(handlerFixture) http.HandlerFunc
+		path        string
+		body        string
+		wantCode    int
+		wantBody    string
+		prepareData func(*testing.T, handlerFixture)
+	}{
+		{
+			name:     "zip invalid json",
+			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateZip(f.manager, f.config) },
+			path:     "/zip",
+			body:     `{`,
+			wantCode: http.StatusBadRequest,
+			wantBody: "invalid request body\n",
+		},
+		{
+			name:     "tarball empty files",
+			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateTarball(f.manager, f.config) },
+			path:     "/tarball",
+			body:     `{"files":[]}`,
+			wantCode: http.StatusBadRequest,
+			wantBody: "files list is empty\n",
+		},
+		{
+			name:     "zip missing file",
+			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateZip(f.manager, f.config) },
+			path:     "/zip",
+			body:     `{"files":["nested/missing.txt"]}`,
+			wantCode: http.StatusBadRequest,
+			wantBody: "file not found: nested/missing.txt\n",
+		},
+		{
+			name:     "tarball outside source root",
+			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateTarball(f.manager, f.config) },
+			path:     "/tarball",
+			body:     `{"files":["../secret.txt"]}`,
+			wantCode: http.StatusBadRequest,
+			wantBody: "file path cannot escape source root: ../secret.txt\n",
+		},
+		{
+			name:     "script outside download root",
+			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateScript(f.manager) },
+			path:     "/script",
+			body:     `{"files":["../secret.txt"]}`,
+			wantCode: http.StatusBadRequest,
+			wantBody: "file path cannot escape the download root: ../secret.txt\n",
+		},
 	}
-	const wantBody = "file path cannot escape source root: ../secret.txt\n"
-	if rec.Body.String() != wantBody {
-		t.Fatalf("expected body %q, got %q", wantBody, rec.Body.String())
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newHandlerFixture(t)
+			if tt.prepareData != nil {
+				tt.prepareData(t, fixture)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			rec := httptest.NewRecorder()
+
+			tt.handler(fixture).ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantCode {
+				t.Fatalf("expected status %d, got %d", tt.wantCode, rec.Code)
+			}
+			if rec.Body.String() != tt.wantBody {
+				t.Fatalf("expected body %q, got %q", tt.wantBody, rec.Body.String())
+			}
+		})
 	}
 }
 
 func TestHandleStatusReturnsStoredJob(t *testing.T) {
-	store := core.NewStore()
-	job := &core.Job{ID: "job-123", Status: core.StatusProcessing, Progress: 37, ExpiresAt: time.Now().Add(time.Minute)}
-	store.Set(job)
+	t.Parallel()
+
+	fixture := newHandlerFixture(t)
+	job := &core.Job{
+		ID:        "job-123",
+		Type:      core.JobTypeZip,
+		Status:    core.StatusProcessing,
+		Progress:  37,
+		ExpiresAt: time.Now().Add(time.Minute),
+	}
+	if err := fixture.jobs.Add(job); err != nil {
+		t.Fatalf("add job: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/status/"+job.ID, nil)
 	rec := httptest.NewRecorder()
 
-	HandleStatus(store).ServeHTTP(rec, req)
+	HandleStatus(fixture.jobs).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
@@ -324,166 +265,117 @@ func TestHandleStatusReturnsStoredJob(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.ID != job.ID {
-		t.Fatalf("expected job id %q, got %q", job.ID, got.ID)
-	}
-	if got.Status != job.Status {
-		t.Fatalf("expected job status %q, got %q", job.Status, got.Status)
-	}
-	if got.Progress != job.Progress {
-		t.Fatalf("expected job progress %d, got %d", job.Progress, got.Progress)
+	if got.ID != job.ID || got.Status != job.Status || got.Progress != job.Progress {
+		t.Fatalf("unexpected job response: %#v", got)
 	}
 }
 
-func TestHandleDownloadServesFinishedZip(t *testing.T) {
-	store := core.NewStore()
-	jobsDir := useTestJobsDir(t)
+func TestHandleStatusReturnsNotFoundForUnknownJob(t *testing.T) {
+	t.Parallel()
 
-	filename := "download-test.zip"
-	zipPath := filepath.Join(jobsDir, filename)
-	t.Cleanup(func() {
-		_ = os.Remove(zipPath)
-	})
+	fixture := newHandlerFixture(t)
+	req := httptest.NewRequest(http.MethodGet, "/status/missing", nil)
+	rec := httptest.NewRecorder()
 
-	if err := os.WriteFile(zipPath, []byte("zip bytes"), 0o644); err != nil {
-		t.Fatalf("write zip file: %v", err)
+	HandleStatus(fixture.jobs).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
 	}
+	if rec.Body.String() != "job not found\n" {
+		t.Fatalf("expected not found body, got %q", rec.Body.String())
+	}
+}
 
+func TestHandleDownloadReturnsConflictUntilReady(t *testing.T) {
+	t.Parallel()
+
+	fixture := newHandlerFixture(t)
 	job := &core.Job{
-		ID:        "job-done",
-		Status:    core.StatusDone,
-		Filename:  filename,
+		ID:        "job-pending",
+		Type:      core.JobTypeZip,
+		Status:    core.StatusProcessing,
 		ExpiresAt: time.Now().Add(time.Minute),
 	}
-	store.Set(job)
+	if err := fixture.jobs.Add(job); err != nil {
+		t.Fatalf("add job: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/download/"+job.ID, nil)
 	rec := httptest.NewRecorder()
 
-	HandleDownload(store).ServeHTTP(rec, req)
+	HandleDownload(fixture.jobs, fixture.config).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
-	}
-	wantDisposition := `attachment; filename="` + filename + `"`
-	if got := rec.Header().Get("Content-Disposition"); got != wantDisposition {
-		t.Fatalf("expected content disposition %q, got %q", wantDisposition, got)
-	}
-	if rec.Body.String() != "zip bytes" {
-		t.Fatalf("expected response body %q, got %q", "zip bytes", rec.Body.String())
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
 	}
 }
 
-func TestHandleDownloadServesFinishedTarball(t *testing.T) {
-	store := core.NewStore()
-	jobsDir := useTestJobsDir(t)
+func TestHandleDownloadServesFinishedArtifact(t *testing.T) {
+	t.Parallel()
 
-	filename := "download-test.tar.gz"
-	tarballPath := filepath.Join(jobsDir, filename)
-	t.Cleanup(func() {
-		_ = os.Remove(tarballPath)
-	})
-
-	if err := os.WriteFile(tarballPath, []byte("tarball bytes"), 0o644); err != nil {
-		t.Fatalf("write tarball file: %v", err)
+	tests := []struct {
+		name     string
+		filename string
+		body     string
+	}{
+		{name: "zip", filename: "download-test.zip", body: "zip bytes"},
+		{name: "tarball", filename: "download-test.tar.gz", body: "tarball bytes"},
 	}
 
-	job := &core.Job{
-		ID:        "job-tarball",
-		Status:    core.StatusDone,
-		Filename:  filename,
-		ExpiresAt: time.Now().Add(time.Minute),
-	}
-	store.Set(job)
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	req := httptest.NewRequest(http.MethodGet, "/download/"+job.ID, nil)
-	rec := httptest.NewRecorder()
+			fixture := newHandlerFixture(t)
+			artifactPath := filepath.Join(fixture.config.JobsDir, tt.filename)
+			if err := os.WriteFile(artifactPath, []byte(tt.body), 0o644); err != nil {
+				t.Fatalf("write artifact: %v", err)
+			}
 
-	HandleDownload(store).ServeHTTP(rec, req)
+			job := &core.Job{
+				ID:        "job-done",
+				Type:      core.JobTypeZip,
+				Status:    core.StatusDone,
+				Filename:  tt.filename,
+				ExpiresAt: time.Now().Add(time.Minute),
+			}
+			if err := fixture.jobs.Add(job); err != nil {
+				t.Fatalf("add job: %v", err)
+			}
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
-	}
-	wantDisposition := `attachment; filename="` + filename + `"`
-	if got := rec.Header().Get("Content-Disposition"); got != wantDisposition {
-		t.Fatalf("expected content disposition %q, got %q", wantDisposition, got)
-	}
-	if rec.Body.String() != "tarball bytes" {
-		t.Fatalf("expected response body %q, got %q", "tarball bytes", rec.Body.String())
-	}
-}
+			req := httptest.NewRequest(http.MethodGet, "/download/"+job.ID, nil)
+			rec := httptest.NewRecorder()
 
-func TestHandleCreateScriptAcceptsValidRequest(t *testing.T) {
-	store := core.NewStore()
-	jobsDir := useTestJobsDir(t)
+			HandleDownload(fixture.jobs, fixture.config).ServeHTTP(rec, req)
 
-	req := httptest.NewRequest(http.MethodPost, "/script", strings.NewReader(`{"files":["rna/accession.bigwig","rna/second.bigwig"]}`))
-	rec := httptest.NewRecorder()
-
-	HandleCreateScript(store).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
-	}
-
-	var got JobResponse
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-
-	job, ok := store.Get(got.ID)
-	if !ok {
-		t.Fatalf("expected job %q to be stored", got.ID)
-	}
-	if len(job.Files) != 2 || job.Files[0] != "rna/accession.bigwig" || job.Files[1] != "rna/second.bigwig" {
-		t.Fatalf("expected normalized relative paths to be stored, got %#v", job.Files)
-	}
-
-	waitForScriptJobDone(t, store, got.ID)
-
-	job, _ = store.Get(got.ID)
-	if job.Filename == "" {
-		t.Fatalf("expected script filename to be set")
-	}
-	if _, err := os.Stat(filepath.Join(jobsDir, job.Filename)); err != nil {
-		t.Fatalf("expected generated script to exist: %v", err)
-	}
-	if time.Until(got.ExpiresAt) <= 0 {
-		t.Fatalf("expected expires_at to be in the future")
-	}
-
-	store.Delete(got.ID)
-}
-
-func TestHandleCreateScriptRejectsUnsafePath(t *testing.T) {
-	store := core.NewStore()
-	useTestJobsDir(t)
-
-	req := httptest.NewRequest(http.MethodPost, "/script", strings.NewReader(`{"files":["../secret.txt"]}`))
-	rec := httptest.NewRecorder()
-
-	HandleCreateScript(store).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-	const wantBody = "file path cannot escape the download root: ../secret.txt\n"
-	if rec.Body.String() != wantBody {
-		t.Fatalf("expected body %q, got %q", wantBody, rec.Body.String())
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+			}
+			wantDisposition := `attachment; filename="` + tt.filename + `"`
+			if got := rec.Header().Get("Content-Disposition"); got != wantDisposition {
+				t.Fatalf("expected content disposition %q, got %q", wantDisposition, got)
+			}
+			if rec.Body.String() != tt.body {
+				t.Fatalf("expected response body %q, got %q", tt.body, rec.Body.String())
+			}
+		})
 	}
 }
 
-func waitForScriptJobDone(t *testing.T, store *core.Store, id string) {
+func waitForJobDone(t *testing.T, jobs *core.Jobs, id string) *core.Job {
 	t.Helper()
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		job, ok := store.Get(id)
+		job, ok := jobs.Get(id)
 		if ok && job.Status == core.StatusDone && job.Filename != "" {
-			return
+			return job
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
 
-	t.Fatalf("timed out waiting for script job %s to complete", id)
+	t.Fatalf("timed out waiting for job %s to complete", id)
+	return nil
 }
