@@ -16,6 +16,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	if config.SourceRootDir == "" {
+		log.Fatal("load config: SOURCE_ROOT_DIR is required")
+	}
 
 	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
 		log.Fatalf("create jobs dir: %v", err)
@@ -31,7 +34,7 @@ func main() {
 
 	r.Post("/zip", api.HandleCreateZip(manager, config))
 	r.Post("/tarball", api.HandleCreateTarball(manager, config))
-	r.Post("/script", api.HandleCreateScript(manager))
+	r.Post("/script", api.HandleCreateScript(manager, config))
 	r.Get("/status/{id}", api.HandleStatus(jobs))
 	r.Get("/download/{id}", api.HandleDownload(jobs, config))
 

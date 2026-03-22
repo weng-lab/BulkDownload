@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jair/bulkdownload/core"
 )
 
@@ -133,10 +134,12 @@ func TestHandleCreateScriptAcceptsValidRequest(t *testing.T) {
 	t.Parallel()
 
 	fixture := newHandlerFixture(t)
+	writeSourceFile(t, fixture.config.SourceRootDir, "rna/accession.bigwig", "rna data")
+	writeSourceFile(t, fixture.config.SourceRootDir, "dna/sample.cram", "dna data")
 	req := httptest.NewRequest(http.MethodPost, "/script", strings.NewReader(`{"files":["rna/accession.bigwig","dna/sample.cram"]}`))
 	rec := httptest.NewRecorder()
 
-	HandleCreateScript(fixture.manager).ServeHTTP(rec, req)
+	HandleCreateScript(fixture.manager, fixture.config).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
@@ -200,15 +203,15 @@ func TestHandleCreateRejectsInvalidRequests(t *testing.T) {
 			path:     "/tarball",
 			body:     `{"files":["../secret.txt"]}`,
 			wantCode: http.StatusBadRequest,
-			wantBody: "file path cannot escape source root: ../secret.txt\n",
+			wantBody: "file not found: ../secret.txt\n",
 		},
 		{
-			name:     "script outside download root",
-			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateScript(f.manager) },
+			name:     "script missing file",
+			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateScript(f.manager, f.config) },
 			path:     "/script",
 			body:     `{"files":["../secret.txt"]}`,
 			wantCode: http.StatusBadRequest,
-			wantBody: "file path cannot escape the download root: ../secret.txt\n",
+			wantBody: "file not found: ../secret.txt\n",
 		},
 	}
 
@@ -252,10 +255,7 @@ func TestHandleStatusReturnsStoredJob(t *testing.T) {
 		t.Fatalf("add job: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/status/"+job.ID, nil)
-	rec := httptest.NewRecorder()
-
-	HandleStatus(fixture.jobs).ServeHTTP(rec, req)
+	rec := performRouteRequest(http.MethodGet, "/status/{id}", "/status/"+job.ID, HandleStatus(fixture.jobs))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
@@ -274,10 +274,7 @@ func TestHandleStatusReturnsNotFoundForUnknownJob(t *testing.T) {
 	t.Parallel()
 
 	fixture := newHandlerFixture(t)
-	req := httptest.NewRequest(http.MethodGet, "/status/missing", nil)
-	rec := httptest.NewRecorder()
-
-	HandleStatus(fixture.jobs).ServeHTTP(rec, req)
+	rec := performRouteRequest(http.MethodGet, "/status/{id}", "/status/missing", HandleStatus(fixture.jobs))
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
@@ -301,10 +298,7 @@ func TestHandleDownloadReturnsConflictUntilReady(t *testing.T) {
 		t.Fatalf("add job: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/download/"+job.ID, nil)
-	rec := httptest.NewRecorder()
-
-	HandleDownload(fixture.jobs, fixture.config).ServeHTTP(rec, req)
+	rec := performRouteRequest(http.MethodGet, "/download/{id}", "/download/"+job.ID, HandleDownload(fixture.jobs, fixture.config))
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
@@ -345,10 +339,7 @@ func TestHandleDownloadServesFinishedArtifact(t *testing.T) {
 				t.Fatalf("add job: %v", err)
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "/download/"+job.ID, nil)
-			rec := httptest.NewRecorder()
-
-			HandleDownload(fixture.jobs, fixture.config).ServeHTTP(rec, req)
+			rec := performRouteRequest(http.MethodGet, "/download/{id}", "/download/"+job.ID, HandleDownload(fixture.jobs, fixture.config))
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
@@ -378,4 +369,15 @@ func waitForJobDone(t *testing.T, jobs *core.Jobs, id string) *core.Job {
 
 	t.Fatalf("timed out waiting for job %s to complete", id)
 	return nil
+}
+
+func performRouteRequest(method, pattern, target string, handler http.HandlerFunc) *httptest.ResponseRecorder {
+	router := chi.NewRouter()
+	router.MethodFunc(method, pattern, handler)
+
+	req := httptest.NewRequest(method, target, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	return rec
 }
