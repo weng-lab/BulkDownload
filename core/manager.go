@@ -105,7 +105,7 @@ func (m *Manager) CreateScriptJob(files []string) (*Job, error) {
 
 func (m *Manager) createJob(jobType JobType, files []string) (*Job, error) {
 	expiresAt := time.Now().Add(m.jobTTL)
-	job := &Job{
+	job := Job{
 		Type:      jobType,
 		Status:    StatusPending,
 		ExpiresAt: expiresAt,
@@ -126,7 +126,7 @@ func (m *Manager) createJob(jobType JobType, files []string) (*Job, error) {
 		if !ok {
 			return nil, ErrJobNotFound
 		}
-		return createdJob, nil
+		return &createdJob, nil
 	}
 
 	return nil, errors.New("generate job id: exhausted retries")
@@ -140,10 +140,10 @@ func (m *Manager) getJobOfType(jobID string, jobType JobType) (*Job, error) {
 	if job.Type != jobType {
 		return nil, fmt.Errorf("job %s has type %s, not %s", jobID, job.Type, jobType)
 	}
-	return job, nil
+	return &job, nil
 }
 
-func (m *Manager) setStatus(jobID, status string) error {
+func (m *Manager) setStatus(jobID string, status JobStatus) error {
 	return m.jobs.Update(jobID, func(job *Job) error {
 		job.Status = status
 		if status == StatusPending {

@@ -65,7 +65,7 @@ func TestCreateZipJob(t *testing.T) {
 			config := testConfig(t)
 			jobs := NewJobs()
 			for _, id := range tt.seedExisting {
-				if err := jobs.Add(&Job{ID: id, Type: JobTypeZip, ExpiresAt: time.Unix(100, 0)}); err != nil {
+				if err := jobs.Add(Job{ID: id, Type: JobTypeZip, ExpiresAt: time.Unix(100, 0)}); err != nil {
 					t.Fatalf("Add(%q) error = %v", id, err)
 				}
 			}
@@ -98,7 +98,7 @@ func TestCreateZipJob(t *testing.T) {
 
 				want := *tt.wantJob
 				want.ExpiresAt = job.ExpiresAt
-				if diff := cmp.Diff(&want, job, cmpopts.EquateApproxTime(time.Second)); diff != "" {
+				if diff := cmp.Diff(want, *job, cmpopts.EquateApproxTime(time.Second)); diff != "" {
 					t.Errorf("CreateZipJob() mismatch (-want +got):\n%s", diff)
 				}
 

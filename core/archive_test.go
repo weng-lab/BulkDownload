@@ -355,7 +355,7 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 			if got.Filename == "" {
 				t.Fatalf("processed job filename = %q, want non-empty", got.Filename)
 			}
-			want := &Job{
+			want := Job{
 				ID:        job.ID,
 				Type:      tt.jobType,
 				Status:    StatusDone,
