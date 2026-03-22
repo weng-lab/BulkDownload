@@ -16,7 +16,7 @@ func TestSweepExpired(t *testing.T) {
 
 	tests := []struct {
 		name                string
-		jobs                []*Job
+		jobs                []Job
 		files               map[string]string
 		wantRemainingJobIDs []string
 		wantRemovedFiles    []string
@@ -24,7 +24,7 @@ func TestSweepExpired(t *testing.T) {
 	}{
 		{
 			name: "removes expired download with generated file",
-			jobs: []*Job{
+			jobs: []Job{
 				{ID: "expired", Type: JobTypeZip, Status: StatusDone, Filename: "expired.zip", ExpiresAt: now.Add(-time.Second)},
 				{ID: "active", Type: JobTypeZip, Status: StatusDone, Filename: "active.zip", ExpiresAt: now.Add(time.Second)},
 			},
@@ -38,14 +38,14 @@ func TestSweepExpired(t *testing.T) {
 		},
 		{
 			name: "removes expired job when output file is already gone",
-			jobs: []*Job{
+			jobs: []Job{
 				{ID: "expired", Type: JobTypeScript, Status: StatusDone, Filename: "missing.sh", ExpiresAt: now.Add(-time.Second)},
 			},
 			wantRemovedFiles: []string{"missing.sh"},
 		},
 		{
 			name: "removes expired job without output filename",
-			jobs: []*Job{
+			jobs: []Job{
 				{ID: "expired", Type: JobTypeTarball, Status: StatusFailed, ExpiresAt: now.Add(-time.Second)},
 				{ID: "active", Type: JobTypeTarball, Status: StatusPending, ExpiresAt: now.Add(time.Second)},
 			},
@@ -111,7 +111,7 @@ func TestStartCleanup_SweepsOnTick(t *testing.T) {
 	jobsDir := t.TempDir()
 	jobs := NewJobs()
 	now := time.Now()
-	job := &Job{
+	job := Job{
 		ID:        "expired",
 		Type:      JobTypeZip,
 		Status:    StatusDone,

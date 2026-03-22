@@ -16,10 +16,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
-	if config.SourceRootDir == "" {
-		log.Fatal("load config: SOURCE_ROOT_DIR is required")
-	}
-
 	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
 		log.Fatalf("create jobs dir: %v", err)
 	}

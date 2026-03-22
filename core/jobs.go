@@ -2,15 +2,18 @@ package core
 
 import (
 	"errors"
+	"slices"
 	"sync"
 	"time"
 )
 
+type JobStatus string
+
 const (
-	StatusPending    = "pending"
-	StatusProcessing = "processing"
-	StatusDone       = "done"
-	StatusFailed     = "failed"
+	StatusPending    JobStatus = "pending"
+	StatusProcessing JobStatus = "processing"
+	StatusDone       JobStatus = "done"
+	StatusFailed     JobStatus = "failed"
 )
 
 var (
@@ -31,7 +34,7 @@ const (
 type Job struct {
 	ID        string    `json:"id"`
 	Type      JobType   `json:"type"`
-	Status    string    `json:"status"`
+	Status    JobStatus `json:"status"`
 	Progress  int       `json:"progress"`
 	ExpiresAt time.Time `json:"expires_at"`
 	Files     []string  `json:"-"`
@@ -48,10 +51,7 @@ func NewJobs() *Jobs {
 	return &Jobs{jobs: make(map[string]*Job)}
 }
 
-func (j *Jobs) Add(job *Job) error {
-	if job == nil {
-		return ErrInvalidJob
-	}
+func (j *Jobs) Add(job Job) error {
 	if job.ID == "" {
 		return ErrInvalidJobID
 	}
@@ -63,20 +63,24 @@ func (j *Jobs) Add(job *Job) error {
 		return ErrJobExists
 	}
 
-	j.jobs[job.ID] = snapshotJob(job)
+	stored := job
+	stored.Files = slices.Clone(job.Files)
+	j.jobs[job.ID] = &stored
 	return nil
 }
 
-func (j *Jobs) Get(id string) (*Job, bool) {
+func (j *Jobs) Get(id string) (Job, bool) {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
 
 	job, ok := j.jobs[id]
 	if !ok {
-		return nil, false
+		return Job{}, false
 	}
 
-	return snapshotJob(job), true
+	result := *job
+	result.Files = slices.Clone(job.Files)
+	return result, true
 }
 
 func (j *Jobs) Update(id string, fn func(*Job) error) error {
@@ -87,7 +91,6 @@ func (j *Jobs) Update(id string, fn func(*Job) error) error {
 	if !ok {
 		return ErrJobNotFound
 	}
-
 	return fn(job)
 }
 
@@ -97,24 +100,17 @@ func (j *Jobs) Delete(id string) {
 	delete(j.jobs, id)
 }
 
-func (j *Jobs) Expired(now time.Time) []*Job {
+func (j *Jobs) Expired(now time.Time) []Job {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
 
-	var out []*Job
+	var out []Job
 	for _, job := range j.jobs {
 		if now.After(job.ExpiresAt) {
-			out = append(out, snapshotJob(job))
+			result := *job
+			result.Files = slices.Clone(job.Files)
+			out = append(out, result)
 		}
 	}
-
 	return out
-}
-
-func snapshotJob(job *Job) *Job {
-	snapshot := *job
-	if job.Files != nil {
-		snapshot.Files = append([]string(nil), job.Files...)
-	}
-	return &snapshot
 }

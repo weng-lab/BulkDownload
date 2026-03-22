@@ -1,6 +1,6 @@
 # Simplification Opportunities
 
-## `api/handlers.go`
+## `api/handlers.go` - DONE
 
 - The three create handlers are near copy-paste (`zip`, `tarball`, `script`): same decode/create/log/spawn/respond flow with tiny differences. Good target for one shared `handleCreateJob` path.
 - `HandleStatus` and `HandleDownload` parse IDs by trimming `r.URL.Path`; that is brittle and surprising when the router already owns path params.
@@ -13,8 +13,9 @@
 - `createZipFromRoot` and `createTarballFromRoot` repeat the same pipeline: validate, map inputs, compute size, build reporter, create output, loop files, finalize progress.
 - Thin wrappers like `createZip`, `createTarball`, and `addFileToTarball` add indirection without much value.
 - `archiveInputList` plus `sourcePaths()` feels like extra type ceremony for a short-lived transformation.
+- validate files should os.Stat to ensure they exist and not check for abs path. 
 
-## `core/script.go`
+## `core/script.go` - SKIP (SUBJECT TO CHANGE)
 
 - Script generation uses `text/template` plus `scriptTemplateData`, `scriptTemplateFile`, and `LineSuffix` just to print a shell list; that abstraction is heavier than the problem.
 - Quoting and formatting are spread across Go structs, template syntax, and bash behavior, which makes small changes harder than they should be.
@@ -56,7 +57,7 @@
 - There is a growing mini test framework here (`handlerFixture`, file writers, polling helper), which is useful but also a sign the production boundaries may be harder to test than necessary.
 - HTTP contract tests and async job-completion behavior are mixed together more than they need to be.
 
-## `core/script_test.go`
+## `core/script_test.go` - SKIP (SUBJECT TO CHANGE)
 
 - `expectedDownloadScript()` mirrors the production script almost line-for-line, so harmless formatting changes create large noisy test diffs.
 - This is effectively a golden test embedded in Go code, without the simplicity of a real golden file.

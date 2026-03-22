@@ -12,7 +12,7 @@ func TestJobs_AddAndGet(t *testing.T) {
 	t.Parallel()
 
 	jobs := NewJobs()
-	job := &Job{
+	job := Job{
 		ID:        "job-1",
 		Type:      JobTypeZip,
 		Status:    StatusPending,
@@ -37,7 +37,7 @@ func TestJobs_GetReturnsSnapshot(t *testing.T) {
 	t.Parallel()
 
 	jobs := NewJobs()
-	job := &Job{
+	job := Job{
 		ID:        "job-1",
 		Type:      JobTypeZip,
 		Status:    StatusPending,
@@ -68,7 +68,7 @@ func TestJobs_DeleteRemovesJob(t *testing.T) {
 	t.Parallel()
 
 	jobs := NewJobs()
-	job := &Job{ID: "job-1", Type: JobTypeZip}
+	job := Job{ID: "job-1", Type: JobTypeZip}
 	if err := jobs.Add(job); err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
@@ -85,16 +85,12 @@ func TestJobs_AddRejectsInvalidJobs(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		job     *Job
+		job     Job
 		wantErr error
 	}{
 		{
-			name:    "nil job",
-			wantErr: ErrInvalidJob,
-		},
-		{
 			name:    "empty id",
-			job:     &Job{Type: JobTypeZip},
+			job:     Job{Type: JobTypeZip},
 			wantErr: ErrInvalidJobID,
 		},
 	}
@@ -117,7 +113,7 @@ func TestJobs_AddRejectsDuplicateID(t *testing.T) {
 	t.Parallel()
 
 	jobs := NewJobs()
-	job := &Job{ID: "job-1", Type: JobTypeZip}
+	job := Job{ID: "job-1", Type: JobTypeZip}
 
 	if err := jobs.Add(job); err != nil {
 		t.Fatalf("first Add() error = %v", err)
@@ -131,7 +127,7 @@ func TestJobs_Update(t *testing.T) {
 	t.Parallel()
 
 	jobs := NewJobs()
-	job := &Job{
+	job := Job{
 		ID:        "job-1",
 		Type:      JobTypeZip,
 		Status:    StatusPending,
@@ -155,7 +151,7 @@ func TestJobs_Update(t *testing.T) {
 	if !ok {
 		t.Fatalf("Get(%q) ok = false, want true", job.ID)
 	}
-	if diff := cmp.Diff(&Job{
+	if diff := cmp.Diff(Job{
 		ID:        "job-1",
 		Type:      JobTypeZip,
 		Status:    StatusProcessing,
@@ -186,10 +182,10 @@ func TestJobs_ExpiredReturnsSnapshots(t *testing.T) {
 
 	jobs := NewJobs()
 	now := time.Unix(100, 0)
-	if err := jobs.Add(&Job{ID: "expired", Type: JobTypeZip, ExpiresAt: now.Add(-time.Second), Files: []string{"alpha.txt"}}); err != nil {
+	if err := jobs.Add(Job{ID: "expired", Type: JobTypeZip, ExpiresAt: now.Add(-time.Second), Files: []string{"alpha.txt"}}); err != nil {
 		t.Fatalf("Add(expired) error = %v", err)
 	}
-	if err := jobs.Add(&Job{ID: "active", Type: JobTypeZip, ExpiresAt: now.Add(time.Second)}); err != nil {
+	if err := jobs.Add(Job{ID: "active", Type: JobTypeZip, ExpiresAt: now.Add(time.Second)}); err != nil {
 		t.Fatalf("Add(active) error = %v", err)
 	}
 

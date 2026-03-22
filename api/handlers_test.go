@@ -244,7 +244,7 @@ func TestHandleStatusReturnsStoredJob(t *testing.T) {
 	t.Parallel()
 
 	fixture := newHandlerFixture(t)
-	job := &core.Job{
+	job := core.Job{
 		ID:        "job-123",
 		Type:      core.JobTypeZip,
 		Status:    core.StatusProcessing,
@@ -288,7 +288,7 @@ func TestHandleDownloadReturnsConflictUntilReady(t *testing.T) {
 	t.Parallel()
 
 	fixture := newHandlerFixture(t)
-	job := &core.Job{
+	job := core.Job{
 		ID:        "job-pending",
 		Type:      core.JobTypeZip,
 		Status:    core.StatusProcessing,
@@ -328,7 +328,7 @@ func TestHandleDownloadServesFinishedArtifact(t *testing.T) {
 				t.Fatalf("write artifact: %v", err)
 			}
 
-			job := &core.Job{
+			job := core.Job{
 				ID:        "job-done",
 				Type:      core.JobTypeZip,
 				Status:    core.StatusDone,
@@ -362,7 +362,7 @@ func waitForJobDone(t *testing.T, jobs *core.Jobs, id string) *core.Job {
 	for time.Now().Before(deadline) {
 		job, ok := jobs.Get(id)
 		if ok && job.Status == core.StatusDone && job.Filename != "" {
-			return job
+			return &job
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
