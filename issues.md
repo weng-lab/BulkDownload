@@ -36,7 +36,7 @@
 
 - `LoadConfig()` mutates process-global env by reading `.env` and calling `os.Setenv`; surprising side effect for a config loader and awkward in tests.
 - Config semantics are inconsistent: empty string means fallback, whitespace handling differs by type, and zero/negative durations are accepted.
-- Supporting both `JOB_TTL` and `ZIP_TTL` adds compatibility branching in the core path.
+- `ZIP_TTL` compatibility support has been removed; `JOB_TTL` is now the only supported TTL setting.
 
 ## `core/progress.go`
 

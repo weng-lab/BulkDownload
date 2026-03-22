@@ -48,7 +48,6 @@ func clearConfigEnv(t *testing.T) {
 		"DOWNLOAD_ROOT_DIR",
 		"PORT",
 		"JOB_TTL",
-		"ZIP_TTL",
 		"CLEANUP_TICK",
 	} {
 		t.Setenv(key, "")
