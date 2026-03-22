@@ -295,7 +295,7 @@ func createJob(t *testing.T, url, body string) api.JobResponse {
 	return created
 }
 
-func waitForDoneStatus(t *testing.T, baseURL, id string) core.Job {
+func waitForDoneStatus(t *testing.T, baseURL, id string) api.JobStatusResponse {
 	t.Helper()
 
 	deadline := time.Now().Add(3 * time.Second)
@@ -311,7 +311,7 @@ func waitForDoneStatus(t *testing.T, baseURL, id string) core.Job {
 			t.Fatalf("expected status endpoint to return 200, got %d: %s", resp.StatusCode, string(data))
 		}
 
-		var job core.Job
+		var job api.JobStatusResponse
 		if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
 			resp.Body.Close()
 			t.Fatalf("decode status response: %v", err)
@@ -329,5 +329,5 @@ func waitForDoneStatus(t *testing.T, baseURL, id string) core.Job {
 	}
 
 	t.Fatalf("timed out waiting for job %s to complete", id)
-	return core.Job{}
+	return api.JobStatusResponse{}
 }

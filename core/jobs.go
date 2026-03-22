@@ -19,7 +19,6 @@ const (
 var (
 	ErrJobExists    = errors.New("job already exists")
 	ErrJobNotFound  = errors.New("job not found")
-	ErrInvalidJob   = errors.New("invalid job")
 	ErrInvalidJobID = errors.New("invalid job id")
 )
 
@@ -32,14 +31,14 @@ const (
 )
 
 type Job struct {
-	ID        string    `json:"id"`
-	Type      JobType   `json:"type"`
-	Status    JobStatus `json:"status"`
-	Progress  int       `json:"progress"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Files     []string  `json:"-"`
-	Error     string    `json:"error,omitempty"`
-	Filename  string    `json:"filename,omitempty"`
+	ID        string
+	Type      JobType
+	Status    JobStatus
+	Progress  int
+	ExpiresAt time.Time
+	Files     []string
+	Error     string
+	Filename  string
 }
 
 type Jobs struct {
