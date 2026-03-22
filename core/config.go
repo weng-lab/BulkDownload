@@ -49,7 +49,7 @@ func LoadConfig() (Config, error) {
 	config.DownloadRootDir = loadStringEnv("DOWNLOAD_ROOT_DIR", config.DownloadRootDir)
 	config.Port = loadStringEnv("PORT", config.Port)
 
-	jobTTL, err := loadDurationEnv(config.JobTTL, "JOB_TTL", "ZIP_TTL")
+	jobTTL, err := loadDurationEnv(config.JobTTL, "JOB_TTL")
 	if err != nil {
 		return Config{}, fmt.Errorf("%w: %w", ErrInvalidJobTTL, err)
 	}
