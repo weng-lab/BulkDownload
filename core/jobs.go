@@ -14,8 +14,10 @@ const (
 )
 
 var (
-	ErrJobExists   = errors.New("job already exists")
-	ErrJobNotFound = errors.New("job not found")
+	ErrJobExists    = errors.New("job already exists")
+	ErrJobNotFound  = errors.New("job not found")
+	ErrInvalidJob   = errors.New("invalid job")
+	ErrInvalidJobID = errors.New("invalid job id")
 )
 
 type JobType string
@@ -47,6 +49,13 @@ func NewJobs() *Jobs {
 }
 
 func (j *Jobs) Add(job *Job) error {
+	if job == nil {
+		return ErrInvalidJob
+	}
+	if job.ID == "" {
+		return ErrInvalidJobID
+	}
+
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
