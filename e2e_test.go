@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jair/bulkdownload/api"
 	"github.com/jair/bulkdownload/core"
 )
@@ -40,12 +41,12 @@ func newTestApp(t *testing.T, config core.Config) testApp {
 	manager := core.NewManager(jobs, config)
 	core.StartCleanup(jobs, config.JobsDir, config.CleanupTick)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/zip", api.HandleCreateZip(manager, config))
-	mux.HandleFunc("/tarball", api.HandleCreateTarball(manager, config))
-	mux.HandleFunc("/script", api.HandleCreateScript(manager))
-	mux.HandleFunc("/status/", api.HandleStatus(jobs))
-	mux.HandleFunc("/download/", api.HandleDownload(jobs, config))
+	mux := chi.NewRouter()
+	mux.Post("/zip", api.HandleCreateZip(manager, config))
+	mux.Post("/tarball", api.HandleCreateTarball(manager, config))
+	mux.Post("/script", api.HandleCreateScript(manager, config))
+	mux.Get("/status/{id}", api.HandleStatus(jobs))
+	mux.Get("/download/{id}", api.HandleDownload(jobs, config))
 
 	server := httptest.NewServer(mux)
 	t.Cleanup(func() {
@@ -202,6 +203,8 @@ func TestEndToEndScriptLifecycle(t *testing.T) {
 
 	config := testConfig(t)
 	app := newTestApp(t, config)
+	writeAppSourceFile(t, config.SourceRootDir, "rna/accession.bigwig", "rna data")
+	writeAppSourceFile(t, config.SourceRootDir, "dna/sample.cram", "dna data")
 
 	created := createJob(t, app.server.URL+"/script", `{"files":["rna/accession.bigwig","dna/sample.cram"]}`)
 	job := waitForDoneStatus(t, app.server.URL, created.ID)
@@ -242,6 +245,7 @@ func TestCleanupRemovesExpiredJobAndArtifact(t *testing.T) {
 	config := testConfig(t)
 	config.JobTTL = 120 * time.Millisecond
 	app := newTestApp(t, config)
+	writeAppSourceFile(t, config.SourceRootDir, "rna/accession.bigwig", "rna data")
 
 	created := createJob(t, app.server.URL+"/script", `{"files":["rna/accession.bigwig"]}`)
 	job := waitForDoneStatus(t, app.server.URL, created.ID)
