@@ -318,36 +318,36 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			manager, jobs, config := testManager(t)
-			if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
-				t.Fatalf("MkdirAll(%q) error = %v", config.JobsDir, err)
+			fixture := newTestFixture(t)
+			if err := os.MkdirAll(fixture.config.JobsDir, 0o755); err != nil {
+				t.Fatalf("MkdirAll(%q) error = %v", fixture.config.JobsDir, err)
 			}
 
 			files := tt.makeFiles(t, testArchiveRoot(t))
-			job, err := tt.createJob(manager, files)
+			job, err := tt.createJob(fixture.manager, files)
 			if err != nil {
 				t.Fatalf("Create%vJob() error = %v", tt.jobType, err)
 			}
 
-			assertApproxJobTTL(t, job.ExpiresAt, config.JobTTL)
+			assertApproxJobTTL(t, job.ExpiresAt, fixture.config.JobTTL)
 			if diff := cmp.Diff(tt.jobType, job.Type); diff != "" {
 				t.Errorf("job type mismatch (-want +got):\n%s", diff)
 			}
 
-			err = tt.processJob(manager, job.ID)
+			err = tt.processJob(fixture.manager, job.ID)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("process job error = nil, want non-nil")
 				}
-				assertFailedArchiveJob(t, jobs, job.ID)
-				assertFileAbsent(t, filepath.Join(config.JobsDir, job.ID+tt.archiveSuffix))
+				assertFailedArchiveJob(t, fixture.jobs, job.ID)
+				assertFileAbsent(t, filepath.Join(fixture.config.JobsDir, job.ID+tt.archiveSuffix))
 				return
 			}
 			if err != nil {
 				t.Fatalf("process job error = %v", err)
 			}
 
-			got, ok := jobs.Get(job.ID)
+			got, ok := fixture.jobs.Get(job.ID)
 			if !ok {
 				t.Fatalf("Get(%q) ok = false, want true", job.ID)
 			}
@@ -367,7 +367,7 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("processed job mismatch (-want +got):\n%s", diff)
 			}
-			archivePath := filepath.Join(config.JobsDir, got.Filename)
+			archivePath := filepath.Join(fixture.config.JobsDir, got.Filename)
 			if _, err := os.Stat(archivePath); err != nil {
 				t.Fatalf("Stat(%q) error = %v", archivePath, err)
 			}

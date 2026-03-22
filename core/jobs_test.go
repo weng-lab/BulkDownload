@@ -8,7 +8,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestJobsAddGetDelete(t *testing.T) {
+func TestJobs_AddAndGet(t *testing.T) {
+	t.Parallel()
+
 	jobs := NewJobs()
 	job := &Job{
 		ID:        "job-1",
@@ -29,8 +31,30 @@ func TestJobsAddGetDelete(t *testing.T) {
 	if diff := cmp.Diff(job, got); diff != "" {
 		t.Errorf("Get() mismatch (-want +got):\n%s", diff)
 	}
+}
 
+func TestJobs_GetReturnsSnapshot(t *testing.T) {
+	t.Parallel()
+
+	jobs := NewJobs()
+	job := &Job{
+		ID:        "job-1",
+		Type:      JobTypeZip,
+		Status:    StatusPending,
+		ExpiresAt: time.Unix(100, 0),
+		Files:     []string{"alpha.txt"},
+	}
+
+	if err := jobs.Add(job); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	got, ok := jobs.Get(job.ID)
+	if !ok {
+		t.Fatalf("Get(%q) ok = false, want true", job.ID)
+	}
 	got.Files[0] = "changed.txt"
+
 	again, ok := jobs.Get(job.ID)
 	if !ok {
 		t.Fatalf("Get(%q) ok = false, want true", job.ID)
@@ -38,14 +62,60 @@ func TestJobsAddGetDelete(t *testing.T) {
 	if diff := cmp.Diff([]string{"alpha.txt"}, again.Files); diff != "" {
 		t.Errorf("Get() leaked internal state (-want +got):\n%s", diff)
 	}
+}
+
+func TestJobs_DeleteRemovesJob(t *testing.T) {
+	t.Parallel()
+
+	jobs := NewJobs()
+	job := &Job{ID: "job-1", Type: JobTypeZip}
+	if err := jobs.Add(job); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
 
 	jobs.Delete(job.ID)
+
 	if _, ok := jobs.Get(job.ID); ok {
 		t.Fatalf("Get(%q) ok = true, want false after delete", job.ID)
 	}
 }
 
-func TestJobsAddRejectsDuplicateID(t *testing.T) {
+func TestJobs_AddRejectsInvalidJobs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		job     *Job
+		wantErr error
+	}{
+		{
+			name:    "nil job",
+			wantErr: ErrInvalidJob,
+		},
+		{
+			name:    "empty id",
+			job:     &Job{Type: JobTypeZip},
+			wantErr: ErrInvalidJobID,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			jobs := NewJobs()
+			err := jobs.Add(tt.job)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Add() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestJobs_AddRejectsDuplicateID(t *testing.T) {
+	t.Parallel()
+
 	jobs := NewJobs()
 	job := &Job{ID: "job-1", Type: JobTypeZip}
 
@@ -57,7 +127,9 @@ func TestJobsAddRejectsDuplicateID(t *testing.T) {
 	}
 }
 
-func TestJobsUpdate(t *testing.T) {
+func TestJobs_Update(t *testing.T) {
+	t.Parallel()
+
 	jobs := NewJobs()
 	job := &Job{
 		ID:        "job-1",
@@ -95,7 +167,9 @@ func TestJobsUpdate(t *testing.T) {
 	}
 }
 
-func TestJobsUpdateReturnsNotFound(t *testing.T) {
+func TestJobs_UpdateReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
 	jobs := NewJobs()
 
 	err := jobs.Update("missing", func(job *Job) error {
@@ -107,7 +181,9 @@ func TestJobsUpdateReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestJobsExpiredReturnsSnapshots(t *testing.T) {
+func TestJobs_ExpiredReturnsSnapshots(t *testing.T) {
+	t.Parallel()
+
 	jobs := NewJobs()
 	now := time.Unix(100, 0)
 	if err := jobs.Add(&Job{ID: "expired", Type: JobTypeZip, ExpiresAt: now.Add(-time.Second), Files: []string{"alpha.txt"}}); err != nil {
@@ -118,8 +194,8 @@ func TestJobsExpiredReturnsSnapshots(t *testing.T) {
 	}
 
 	expired := jobs.Expired(now)
-	if len(expired) != 1 {
-		t.Fatalf("Expired() len = %d, want 1", len(expired))
+	if diff := cmp.Diff(1, len(expired)); diff != "" {
+		t.Fatalf("Expired() len mismatch (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff("expired", expired[0].ID); diff != "" {
 		t.Errorf("Expired() unexpected job (-want +got):\n%s", diff)

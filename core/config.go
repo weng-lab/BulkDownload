@@ -1,8 +1,15 @@
 package core
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"time"
+)
+
+var (
+	ErrInvalidJobTTL      = errors.New("invalid JOB_TTL")
+	ErrInvalidCleanupTick = errors.New("invalid CLEANUP_TICK")
 )
 
 type Config struct {
@@ -38,13 +45,13 @@ func LoadConfig() (Config, error) {
 
 	jobTTL, err := loadDurationEnv("JOB_TTL", config.JobTTL)
 	if err != nil {
-		return Config{}, err
+		return Config{}, fmt.Errorf("%w: %w", ErrInvalidJobTTL, err)
 	}
 	config.JobTTL = jobTTL
 
 	cleanupTick, err := loadDurationEnv("CLEANUP_TICK", config.CleanupTick)
 	if err != nil {
-		return Config{}, err
+		return Config{}, fmt.Errorf("%w: %w", ErrInvalidCleanupTick, err)
 	}
 	config.CleanupTick = cleanupTick
 
