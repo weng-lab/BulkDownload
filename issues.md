@@ -27,7 +27,7 @@
 - `CreateZipJob`, `CreateTarballJob`, and `CreateScriptJob` are pass-throughs to one internal method.
 - `createJob` does `Add` and then `Get` immediately after, which suggests the storage API is a little awkward.
 
-## `core/jobs.go`
+## `core/jobs.go` - DONE
 
 - The store mixes two models: `Add`/`Get` return snapshots, while `Update` mutates the live stored pointer under lock. That inconsistency increases cognitive load.
 - `core.Job` is both internal storage and API response model via JSON tags, which couples internals to HTTP output.

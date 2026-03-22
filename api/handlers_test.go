@@ -261,11 +261,11 @@ func TestHandleStatusReturnsStoredJob(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 
-	var got core.Job
+	var got JobStatusResponse
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.ID != job.ID || got.Status != job.Status || got.Progress != job.Progress {
+	if got.ID != job.ID || got.Type != job.Type || got.Status != job.Status || got.Progress != job.Progress {
 		t.Fatalf("unexpected job response: %#v", got)
 	}
 }

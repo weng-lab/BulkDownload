@@ -14,15 +14,6 @@ import (
 	"github.com/jair/bulkdownload/core"
 )
 
-type JobRequest struct {
-	Files []string `json:"files"`
-}
-
-type JobResponse struct {
-	ID        string    `json:"id"`
-	ExpiresAt time.Time `json:"expires_at"`
-}
-
 func HandleCreateZip(manager *core.Manager, config core.Config) http.HandlerFunc {
 	return handleCreateJob(
 		"zip",
@@ -67,7 +58,7 @@ func HandleStatus(jobs *core.Jobs) http.HandlerFunc {
 		log.Printf("status: job %s is %s", id, job.Status)
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(job)
+		_ = json.NewEncoder(w).Encode(newJobStatusResponse(job))
 	}
 }
 
