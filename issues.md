@@ -32,11 +32,9 @@
 - The store mixes two models: `Add`/`Get` return snapshots, while `Update` mutates the live stored pointer under lock. That inconsistency increases cognitive load.
 - `core.Job` is both internal storage and API response model via JSON tags, which couples internals to HTTP output.
 
-## `core/config.go`
+## `core/config.go` - DONE
 
-- `LoadConfig()` mutates process-global env by reading `.env` and calling `os.Setenv`; surprising side effect for a config loader and awkward in tests.
-- Config semantics are inconsistent: empty string means fallback, whitespace handling differs by type, and zero/negative durations are accepted.
-- `ZIP_TTL` compatibility support has been removed; `JOB_TTL` is now the only supported TTL setting.
+- Config loading is now pure via `LoadConfigFromEnv`, startup-owned `.env` merging, consistent trimming/fallback behavior, strict positive duration validation, and `JOB_TTL` as the only supported TTL setting.
 
 ## `core/progress.go`
 
