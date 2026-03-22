@@ -1,17 +1,29 @@
 package core
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 var (
 	ErrInvalidJobTTL      = errors.New("invalid JOB_TTL")
 	ErrInvalidCleanupTick = errors.New("invalid CLEANUP_TICK")
+)
+
+const (
+	envJobsDir         = "JOBS_DIR"
+	envSourceRootDir   = "SOURCE_ROOT_DIR"
+	envPublicBaseURL   = "PUBLIC_BASE_URL"
+	envDownloadRootDir = "DOWNLOAD_ROOT_DIR"
+	envPort            = "PORT"
+	envJobTTL          = "JOB_TTL"
+	envCleanupTick     = "CLEANUP_TICK"
 )
 
 type Config struct {
@@ -37,25 +49,34 @@ func defaultConfig() Config {
 }
 
 func LoadConfig() (Config, error) {
-	if err := loadDotEnv(".env"); err != nil {
-		return Config{}, err
+	dotEnv, err := godotenv.Read(".env")
+	if err != nil {
+		if os.IsNotExist(err) {
+			dotEnv = map[string]string{}
+		} else {
+			return Config{}, fmt.Errorf("read .env: %w", err)
+		}
 	}
 
+	return resolveConfig(mergeEnvWithOverride(dotEnv, currentEnv()))
+}
+
+func resolveConfig(env map[string]string) (Config, error) {
 	config := defaultConfig()
 
-	config.JobsDir = loadStringEnv("JOBS_DIR", config.JobsDir)
-	config.SourceRootDir = loadStringEnv("SOURCE_ROOT_DIR", config.SourceRootDir)
-	config.PublicBaseURL = loadStringEnv("PUBLIC_BASE_URL", config.PublicBaseURL)
-	config.DownloadRootDir = loadStringEnv("DOWNLOAD_ROOT_DIR", config.DownloadRootDir)
-	config.Port = loadStringEnv("PORT", config.Port)
+	config.JobsDir = resolveString(env, envJobsDir, config.JobsDir)
+	config.SourceRootDir = resolveString(env, envSourceRootDir, config.SourceRootDir)
+	config.PublicBaseURL = resolveString(env, envPublicBaseURL, config.PublicBaseURL)
+	config.DownloadRootDir = resolveString(env, envDownloadRootDir, config.DownloadRootDir)
+	config.Port = resolveString(env, envPort, config.Port)
 
-	jobTTL, err := loadDurationEnv(config.JobTTL, "JOB_TTL")
+	jobTTL, err := resolveDuration(env, config.JobTTL, envJobTTL)
 	if err != nil {
 		return Config{}, fmt.Errorf("%w: %w", ErrInvalidJobTTL, err)
 	}
 	config.JobTTL = jobTTL
 
-	cleanupTick, err := loadDurationEnv(config.CleanupTick, "CLEANUP_TICK")
+	cleanupTick, err := resolveDuration(env, config.CleanupTick, envCleanupTick)
 	if err != nil {
 		return Config{}, fmt.Errorf("%w: %w", ErrInvalidCleanupTick, err)
 	}
@@ -64,86 +85,57 @@ func LoadConfig() (Config, error) {
 	return config, nil
 }
 
-func loadDotEnv(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("open %s: %w", path, err)
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		line = strings.TrimPrefix(line, "export ")
-		key, value, ok := strings.Cut(line, "=")
+func currentEnv() map[string]string {
+	env := make(map[string]string)
+	for _, pair := range os.Environ() {
+		key, value, ok := strings.Cut(pair, "=")
 		if !ok {
-			return fmt.Errorf("parse %s: invalid line %q", path, line)
-		}
-
-		key = strings.TrimSpace(key)
-		if key == "" {
-			return fmt.Errorf("parse %s: empty key in line %q", path, line)
-		}
-		if current, exists := os.LookupEnv(key); exists && current != "" {
 			continue
 		}
-
-		value = strings.TrimSpace(value)
-		value = trimMatchingQuotes(value)
-		if err := os.Setenv(key, value); err != nil {
-			return fmt.Errorf("set %s from %s: %w", key, path, err)
-		}
+		env[key] = value
 	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("scan %s: %w", path, err)
-	}
-
-	return nil
+	return env
 }
 
-func loadStringEnv(key, fallback string) string {
-	value, ok := os.LookupEnv(key)
-	if !ok || value == "" {
+func mergeEnvWithOverride(base, override map[string]string) map[string]string {
+	merged := make(map[string]string, len(base)+len(override))
+	maps.Copy(merged, base)
+	maps.Copy(merged, override)
+	return merged
+}
+
+func resolveString(env map[string]string, key, fallback string) string {
+	value, ok := env[key]
+	if !ok {
+		return fallback
+	}
+
+	value = strings.TrimSpace(value)
+	if value == "" {
 		return fallback
 	}
 
 	return value
 }
 
-func loadDurationEnv(fallback time.Duration, keys ...string) (time.Duration, error) {
-	for _, key := range keys {
-		value, ok := os.LookupEnv(key)
-		if !ok || value == "" {
-			continue
-		}
-
-		duration, err := time.ParseDuration(value)
-		if err != nil {
-			return 0, err
-		}
-
-		return duration, nil
+func resolveDuration(env map[string]string, fallback time.Duration, key string) (time.Duration, error) {
+	value, ok := env[key]
+	if !ok {
+		return fallback, nil
 	}
 
-	return fallback, nil
-}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback, nil
+	}
 
-func trimMatchingQuotes(value string) string {
-	if len(value) < 2 {
-		return value
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, err
 	}
-	if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
-		return strings.Trim(value, `"`)
+	if duration <= 0 {
+		return 0, fmt.Errorf("must be greater than 0")
 	}
-	if strings.HasPrefix(value, `'`) && strings.HasSuffix(value, `'`) {
-		return strings.Trim(value, `'`)
-	}
-	return value
+
+	return duration, nil
 }

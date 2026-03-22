@@ -50,7 +50,22 @@ func clearConfigEnv(t *testing.T) {
 		"JOB_TTL",
 		"CLEANUP_TICK",
 	} {
-		t.Setenv(key, "")
+		key := key
+		value, ok := os.LookupEnv(key)
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("Unsetenv(%q) error = %v", key, err)
+		}
+		t.Cleanup(func() {
+			var err error
+			if ok {
+				err = os.Setenv(key, value)
+			} else {
+				err = os.Unsetenv(key)
+			}
+			if err != nil {
+				t.Fatalf("restore env %q: %v", key, err)
+			}
+		})
 	}
 }
 
