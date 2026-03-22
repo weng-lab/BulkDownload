@@ -2,6 +2,8 @@ package core
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -150,5 +152,67 @@ func TestLoadConfig_InvalidDuration(t *testing.T) {
 				t.Errorf("LoadConfig() error mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestLoadConfig_FromDotEnv(t *testing.T) {
+	clearConfigEnv(t)
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+
+	const envFile = `# local overrides
+JOBS_DIR=./custom-jobs
+SOURCE_ROOT_DIR=./source
+PUBLIC_BASE_URL=http://localhost:9000
+DOWNLOAD_ROOT_DIR=downloads
+PORT=9090
+ZIP_TTL=5m
+CLEANUP_TICK=30s
+PROCESSING_DELAY=0s
+`
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(envFile), 0o644); err != nil {
+		t.Fatalf("WriteFile(.env) error = %v", err)
+	}
+
+	got, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	want := Config{
+		JobsDir:         "./custom-jobs",
+		SourceRootDir:   "./source",
+		PublicBaseURL:   "http://localhost:9000",
+		DownloadRootDir: "downloads",
+		Port:            "9090",
+		JobTTL:          5 * time.Minute,
+		CleanupTick:     30 * time.Second,
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("LoadConfig() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestLoadConfig_EnvOverridesDotEnv(t *testing.T) {
+	clearConfigEnv(t)
+	dir := t.TempDir()
+	withWorkingDir(t, dir)
+
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("PORT=9090\nJOB_TTL=5m\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(.env) error = %v", err)
+	}
+	t.Setenv("PORT", "8081")
+	t.Setenv("JOB_TTL", "45s")
+
+	got, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if diff := cmp.Diff("8081", got.Port); diff != "" {
+		t.Errorf("LoadConfig() port mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(45*time.Second, got.JobTTL); diff != "" {
+		t.Errorf("LoadConfig() job ttl mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -5,7 +5,5 @@ go 1.26.1
 require (
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/cors v1.2.2
-	github.com/joho/godotenv v1.5.1
+	github.com/google/go-cmp v0.7.0
 )
-
-require github.com/google/go-cmp v0.7.0 // indirect
