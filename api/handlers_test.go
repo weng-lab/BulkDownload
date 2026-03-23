@@ -11,15 +11,15 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jair/bulkdownload/core"
 	appconfig "github.com/jair/bulkdownload/internal/config"
 	"github.com/jair/bulkdownload/internal/jobs"
+	"github.com/jair/bulkdownload/internal/service"
 )
 
 type handlerFixture struct {
 	config  appconfig.Config
 	jobs    *jobs.Jobs
-	manager *core.Manager
+	manager *service.Manager
 }
 
 func newHandlerFixture(t *testing.T) handlerFixture {
@@ -46,7 +46,7 @@ func newHandlerFixture(t *testing.T) handlerFixture {
 	return handlerFixture{
 		config:  config,
 		jobs:    jobStore,
-		manager: core.NewManager(jobStore, config),
+		manager: service.NewManager(jobStore, config),
 	}
 }
 

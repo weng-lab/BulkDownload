@@ -8,9 +8,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 	"github.com/jair/bulkdownload/api"
-	"github.com/jair/bulkdownload/core"
 	appconfig "github.com/jair/bulkdownload/internal/config"
 	"github.com/jair/bulkdownload/internal/jobs"
+	"github.com/jair/bulkdownload/internal/service"
 )
 
 func main() {
@@ -23,9 +23,9 @@ func main() {
 	}
 
 	jobStore := jobs.NewJobs()
-	manager := core.NewManager(jobStore, config)
+	manager := service.NewManager(jobStore, config)
 
-	core.StartCleanup(jobStore, config.JobsDir, config.CleanupTick)
+	service.StartCleanup(jobStore, config.JobsDir, config.CleanupTick)
 
 	r := chi.NewRouter()
 	r.Use(cors.AllowAll().Handler)

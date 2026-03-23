@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jair/bulkdownload/core"
 	appconfig "github.com/jair/bulkdownload/internal/config"
 	"github.com/jair/bulkdownload/internal/jobs"
+	"github.com/jair/bulkdownload/internal/service"
 )
 
-func HandleCreateJob(manager *core.Manager, config appconfig.Config) http.HandlerFunc {
+func HandleCreateJob(manager *service.Manager, config appconfig.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req, err := decodeCreateJobRequest(r)
 		if err != nil {
