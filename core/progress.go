@@ -15,6 +15,11 @@ type progressReporter struct {
 	onUpdate    func(int)
 }
 
+type progressWriter struct {
+	dst      io.Writer
+	reporter *progressReporter
+}
+
 func newProgressReporter(total int64, onUpdate func(int)) *progressReporter {
 	return &progressReporter{
 		total:       total,
@@ -54,22 +59,14 @@ func totalFileSize(paths []string) (int64, error) {
 	return total, nil
 }
 
+func (w progressWriter) Write(p []byte) (int, error) {
+	n, err := w.dst.Write(p)
+	w.reporter.Add(n)
+	return n, err
+}
+
 func copyWithProgress(dst io.Writer, src io.Reader, reporter *progressReporter) error {
 	buf := make([]byte, copyBufferSize)
-	for {
-		n, err := src.Read(buf)
-		if n > 0 {
-			if _, writeErr := dst.Write(buf[:n]); writeErr != nil {
-				return writeErr
-			}
-			reporter.Add(n)
-		}
-		if err == nil {
-			continue
-		}
-		if err == io.EOF {
-			return nil
-		}
-		return err
-	}
+	_, err := io.CopyBuffer(progressWriter{dst: dst, reporter: reporter}, src, buf)
+	return err
 }

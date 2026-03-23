@@ -32,4 +32,12 @@ Refactor the progress-aware copy path to use standard library copy helpers with 
 
 ## Completion
 
-What was built. Key decisions made during implementation. Any deviations from the slice plan and why. Files created or modified. Anything the next slice should be aware of.
+**Built:** `copyWithProgress` now delegates byte transfer to `io.CopyBuffer` through a small `progressWriter` adapter, and added a focused unit test covering copied output plus progress reporting.
+
+**Decisions:** Count progress from bytes successfully written to the destination instead of bytes merely read, so the reporting contract stays aligned with completed transfer work while letting `io.CopyBuffer` own the copy loop.
+
+**Deviations:** None.
+
+**Files:** `.plans/progress-semantics-cleanup/completed/02-replace-manual-copy-loop.md`, `core/progress.go`, `core/progress_test.go`
+
+**Notes for next slice:** Script jobs still set progress to `100` explicitly before `MarkDone`; slice 3 can now focus on whether that behavior should remain or be reshaped without any archive copy-loop cleanup left.
