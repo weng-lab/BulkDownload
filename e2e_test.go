@@ -327,8 +327,11 @@ func TestEndToEndScriptLifecycle(t *testing.T) {
 	if !strings.Contains(content, "DOWNLOAD_ROOT=${DOWNLOAD_ROOT:-'mohd_data'}") {
 		t.Fatalf("expected script to include download root, got %q", content)
 	}
-	if job.Status != core.StatusDone || job.Progress != 100 {
-		t.Fatalf("expected completed job, got %#v", job)
+	if job.Status != core.StatusDone {
+		t.Fatalf("expected completed script job, got %#v", job)
+	}
+	if job.Progress != 0 {
+		t.Fatalf("expected script job progress to remain 0, got %#v", job)
 	}
 }
 
