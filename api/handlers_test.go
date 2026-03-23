@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -85,14 +86,14 @@ func TestHandleCreateJobAcceptsValidArchiveRequests(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
+		tc := tt
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			fixture := newHandlerFixture(t)
 			writeSourceFile(t, fixture.config.SourceRootDir, "nested/alpha.txt", "alpha contents")
 
-			body := `{"type":"` + tt.jobType + `","files":["nested/alpha.txt"]}`
+			body := `{"type":"` + tc.jobType + `","files":["nested/alpha.txt"]}`
 			req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(body))
 			rec := httptest.NewRecorder()
 
@@ -120,8 +121,8 @@ func TestHandleCreateJobAcceptsValidArchiveRequests(t *testing.T) {
 			if len(job.Files) != 1 || job.Files[0] != "nested/alpha.txt" {
 				t.Fatalf("expected stored files [%q], got %#v", "nested/alpha.txt", job.Files)
 			}
-			if job.Type != tt.wantJobType {
-				t.Fatalf("expected job type %q, got %q", tt.wantJobType, job.Type)
+			if job.Type != tc.wantJobType {
+				t.Fatalf("expected job type %q, got %q", tc.wantJobType, job.Type)
 			}
 			if time.Until(got.ExpiresAt) <= 0 {
 				t.Fatal("expected expires_at to be in the future")
@@ -227,25 +228,77 @@ func TestHandleCreateJobRejectsInvalidRequests(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
+		tc := tt
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			fixture := newHandlerFixture(t)
-			if tt.prepareData != nil {
-				tt.prepareData(t, fixture)
+			if tc.prepareData != nil {
+				tc.prepareData(t, fixture)
 			}
 
-			req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(tt.body))
+			req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(tc.body))
 			rec := httptest.NewRecorder()
 
 			HandleCreateJob(fixture.manager, fixture.config).ServeHTTP(rec, req)
 
-			if rec.Code != tt.wantCode {
-				t.Fatalf("expected status %d, got %d", tt.wantCode, rec.Code)
+			if rec.Code != tc.wantCode {
+				t.Fatalf("expected status %d, got %d", tc.wantCode, rec.Code)
 			}
-			if rec.Body.String() != tt.wantBody {
-				t.Fatalf("expected body %q, got %q", tt.wantBody, rec.Body.String())
+			if rec.Body.String() != tc.wantBody {
+				t.Fatalf("expected body %q, got %q", tc.wantBody, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestWriteCreateJobErrorMapsServiceFailures(t *testing.T) {
+	t.Parallel()
+
+	fixture := newHandlerFixture(t)
+	writeSourceFile(t, fixture.config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+
+	_, validationErr := fixture.manager.CreateJob("invalid", []string{"nested/alpha.txt"})
+	if validationErr == nil {
+		t.Fatal("CreateJob() error = nil, want non-nil")
+	}
+
+	tests := []struct {
+		name          string
+		requestedType string
+		err           error
+		wantCode      int
+		wantBody      string
+	}{
+		{
+			name:          "request validation error",
+			requestedType: "invalid",
+			err:           validationErr,
+			wantCode:      http.StatusBadRequest,
+			wantBody:      "invalid job type: invalid\n",
+		},
+		{
+			name:          "unexpected service failure",
+			requestedType: "zip",
+			err:           errors.New("boom"),
+			wantCode:      http.StatusInternalServerError,
+			wantBody:      "failed to dispatch job\n",
+		},
+	}
+
+	for _, tt := range tests {
+		tc := tt
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := httptest.NewRecorder()
+			writeCreateJobError(rec, tc.requestedType, tc.err)
+
+			if rec.Code != tc.wantCode {
+				t.Fatalf("expected status %d, got %d", tc.wantCode, rec.Code)
+			}
+			if rec.Body.String() != tc.wantBody {
+				t.Fatalf("expected body %q, got %q", tc.wantBody, rec.Body.String())
 			}
 		})
 	}
@@ -329,13 +382,13 @@ func TestHandleDownloadServesFinishedArtifact(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
+		tc := tt
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			fixture := newHandlerFixture(t)
-			artifactPath := filepath.Join(fixture.config.JobsDir, tt.filename)
-			if err := os.WriteFile(artifactPath, []byte(tt.body), 0o644); err != nil {
+			artifactPath := filepath.Join(fixture.config.JobsDir, tc.filename)
+			if err := os.WriteFile(artifactPath, []byte(tc.body), 0o644); err != nil {
 				t.Fatalf("write artifact: %v", err)
 			}
 
@@ -343,7 +396,7 @@ func TestHandleDownloadServesFinishedArtifact(t *testing.T) {
 				ID:        "job-done",
 				Type:      jobs.JobTypeZip,
 				Status:    jobs.StatusDone,
-				Filename:  tt.filename,
+				Filename:  tc.filename,
 				ExpiresAt: time.Now().Add(time.Minute),
 			}
 			if err := fixture.jobs.Add(job); err != nil {
@@ -355,12 +408,12 @@ func TestHandleDownloadServesFinishedArtifact(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 			}
-			wantDisposition := `attachment; filename="` + tt.filename + `"`
+			wantDisposition := `attachment; filename="` + tc.filename + `"`
 			if got := rec.Header().Get("Content-Disposition"); got != wantDisposition {
 				t.Fatalf("expected content disposition %q, got %q", wantDisposition, got)
 			}
-			if rec.Body.String() != tt.body {
-				t.Fatalf("expected response body %q, got %q", tt.body, rec.Body.String())
+			if rec.Body.String() != tc.body {
+				t.Fatalf("expected response body %q, got %q", tc.body, rec.Body.String())
 			}
 		})
 	}

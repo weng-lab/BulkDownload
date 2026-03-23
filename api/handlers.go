@@ -24,13 +24,7 @@ func HandleCreateJob(manager *service.Manager, _ appconfig.Config) http.HandlerF
 
 		job, err := manager.CreateJob(req.Type, req.Files)
 		if err != nil {
-			if service.IsCreateJobRequestError(err) {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-
-			log.Printf("create: failed to dispatch %s job: %v", req.Type, err)
-			http.Error(w, "failed to dispatch job", http.StatusInternalServerError)
+			writeCreateJobError(w, req.Type, err)
 			return
 		}
 
@@ -95,6 +89,16 @@ func writeAcceptedJobResponse(w http.ResponseWriter, job jobs.Job) {
 		ID:        job.ID,
 		ExpiresAt: job.ExpiresAt,
 	})
+}
+
+func writeCreateJobError(w http.ResponseWriter, requestedType string, err error) {
+	if service.IsCreateJobRequestError(err) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("create: failed to dispatch %s job: %v", requestedType, err)
+	http.Error(w, "failed to dispatch job", http.StatusInternalServerError)
 }
 
 func decodeCreateJobRequest(r *http.Request) (CreateJobRequest, error) {
