@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,7 +14,7 @@ import (
 	"github.com/jair/bulkdownload/internal/service"
 )
 
-func HandleCreateJob(manager *service.Manager, config appconfig.Config) http.HandlerFunc {
+func HandleCreateJob(manager *service.Manager, _ appconfig.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req, err := decodeCreateJobRequest(r)
 		if err != nil {
@@ -24,49 +22,21 @@ func HandleCreateJob(manager *service.Manager, config appconfig.Config) http.Han
 			return
 		}
 
-		jobType, err := parseJobType(req.Type)
+		job, err := manager.CreateJob(req.Type, req.Files)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+			if service.IsCreateJobRequestError(err) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 
-		files, err := resolveJobFiles(req.Files, config.SourceRootDir)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var job jobs.Job
-		switch jobType {
-		case jobs.JobTypeZip:
-			job, err = manager.DispatchZipJob(files)
-		case jobs.JobTypeTarball:
-			job, err = manager.DispatchTarballJob(files)
-		case jobs.JobTypeScript:
-			job, err = manager.DispatchScriptJob(files)
-		default:
-			http.Error(w, fmt.Sprintf("invalid job type: %s", jobType), http.StatusBadRequest)
-			return
-		}
-		if err != nil {
-			log.Printf("create: failed to dispatch %s job: %v", jobType, err)
+			log.Printf("create: failed to dispatch %s job: %v", req.Type, err)
 			http.Error(w, "failed to dispatch job", http.StatusInternalServerError)
 			return
 		}
 
-		log.Printf("create: %s job %s accepted with %d files, expires at %s", jobType, job.ID, len(job.Files), job.ExpiresAt.Format(time.RFC3339))
+		log.Printf("create: %s job %s accepted with %d files, expires at %s", job.Type, job.ID, len(job.Files), job.ExpiresAt.Format(time.RFC3339))
 
 		writeAcceptedJobResponse(w, job)
-	}
-}
-
-func parseJobType(raw string) (jobs.JobType, error) {
-	jobType := jobs.JobType(raw)
-	switch jobType {
-	case jobs.JobTypeZip, jobs.JobTypeTarball, jobs.JobTypeScript:
-		return jobType, nil
-	default:
-		return "", fmt.Errorf("invalid job type: %s", raw)
 	}
 }
 
@@ -140,26 +110,4 @@ func decodeCreateJobRequest(r *http.Request) (CreateJobRequest, error) {
 	}
 
 	return req, nil
-}
-
-func resolveJobFiles(files []string, sourceRootDir string) ([]string, error) {
-	resolved := make([]string, 0, len(files))
-	for _, rawPath := range files {
-		file := strings.TrimSpace(rawPath)
-		if file == "" {
-			return nil, fmt.Errorf("file path cannot be empty")
-		}
-
-		if filepath.IsAbs(file) {
-			return nil, fmt.Errorf("absolute paths are not allowed: %s", file)
-		}
-
-		checkPath := filepath.Join(sourceRootDir, file)
-		if _, err := os.Stat(checkPath); err != nil {
-			return nil, fmt.Errorf("file not found: %s", file)
-		}
-		resolved = append(resolved, file)
-	}
-
-	return resolved, nil
 }
