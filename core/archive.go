@@ -42,21 +42,21 @@ func (m *Manager) executeTarballJob(jobID string) error {
 		return err
 	}
 
-	if err := m.setStatus(jobID, StatusProcessing); err != nil {
+	if err := m.jobs.MarkProcessing(jobID); err != nil {
 		return err
 	}
 
 	filename := job.ID + ".tar.gz"
 	outPath := filepath.Join(m.jobsDir, filename)
 	if err := createTarballFromRoot(outPath, m.sourceRootDir, job.Files, func(progress int) {
-		_ = m.setProgress(jobID, progress)
+		_ = m.jobs.SetProgress(jobID, progress)
 	}); err != nil {
 		_ = cleanupFile(outPath)
-		_ = m.setFailed(jobID, err)
+		_ = m.jobs.MarkFailed(jobID, err)
 		return err
 	}
 
-	if err := m.setDone(jobID, filename); err != nil {
+	if err := m.jobs.MarkDone(jobID, filename); err != nil {
 		return err
 	}
 
