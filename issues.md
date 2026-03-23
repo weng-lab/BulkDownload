@@ -69,6 +69,6 @@
 
 - The docs appear to carry complexity from the codebase: multiple helper scripts, mixed path conventions, and more than one "local workflow" story.
 
-## `scripts/request.sh`
+## `scripts/request.sh` - SKIP (SUBJECT TO CHANGE)
 
 - Feels inconsistent with the other scripts: odd conventions, hardcoded localhost, and a different style from the archive request helpers.
