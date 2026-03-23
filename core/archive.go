@@ -10,7 +10,7 @@ import (
 )
 
 func (m *Manager) executeZipJob(jobID string) error {
-	job, err := m.getJobOfType(jobID, JobTypeZip)
+	job, err := m.GetJobOfType(jobID, JobTypeZip)
 	if err != nil {
 		return err
 	}
@@ -37,7 +37,7 @@ func (m *Manager) executeZipJob(jobID string) error {
 }
 
 func (m *Manager) executeTarballJob(jobID string) error {
-	job, err := m.getJobOfType(jobID, JobTypeTarball)
+	job, err := m.GetJobOfType(jobID, JobTypeTarball)
 	if err != nil {
 		return err
 	}
@@ -61,10 +61,6 @@ func (m *Manager) executeTarballJob(jobID string) error {
 	}
 
 	return nil
-}
-
-func createZip(dest string, files []string, onProgress func(int)) error {
-	return createZipFromRoot(dest, "", files, onProgress)
 }
 
 func createZipFromRoot(dest, sourceRoot string, files []string, onProgress func(int)) error {
@@ -121,10 +117,6 @@ func addFileToZip(zw *zip.Writer, sourcePath, archivePath string, reporter *prog
 	}
 
 	return copyWithProgress(w, src, reporter)
-}
-
-func createTarball(dest string, files []string, onProgress func(int)) error {
-	return createTarballFromRoot(dest, "", files, onProgress)
 }
 
 func createTarballFromRoot(dest, sourceRoot string, files []string, onProgress func(int)) error {

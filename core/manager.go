@@ -162,7 +162,7 @@ func (m *Manager) createJob(jobType JobType, files []string) (Job, error) {
 	return Job{}, errors.New("generate job id: exhausted retries")
 }
 
-func (m *Manager) getJobOfType(jobID string, jobType JobType) (*Job, error) {
+func (m *Manager) GetJobOfType(jobID string, jobType JobType) (*Job, error) {
 	job, ok := m.jobs.Get(jobID)
 	if !ok {
 		return nil, ErrJobNotFound

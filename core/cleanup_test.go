@@ -76,7 +76,7 @@ func TestSweepExpired(t *testing.T) {
 				}
 			}
 
-			SweepExpired(jobs, jobsDir, now)
+			sweepExpired(jobs, jobsDir, now)
 
 			var gotRemainingJobIDs []string
 			for _, job := range tt.jobs {
