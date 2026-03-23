@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func SweepExpired(jobs *Jobs, jobsDir string, now time.Time) {
+func sweepExpired(jobs *Jobs, jobsDir string, now time.Time) {
 	for _, job := range jobs.Expired(now) {
 		if job.Filename != "" {
 			_ = cleanupFile(filepath.Join(jobsDir, job.Filename))
@@ -29,7 +29,7 @@ func StartCleanup(jobs *Jobs, jobsDir string, interval time.Duration) func() {
 			case <-stopCh:
 				return
 			case now := <-ticker.C:
-				SweepExpired(jobs, jobsDir, now)
+				sweepExpired(jobs, jobsDir, now)
 			}
 		}
 	}()

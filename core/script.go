@@ -77,7 +77,7 @@ type scriptTemplateFile struct {
 }
 
 func (m *Manager) executeScriptJob(jobID string) error {
-	job, err := m.getJobOfType(jobID, JobTypeScript)
+	job, err := m.GetJobOfType(jobID, JobTypeScript)
 	if err != nil {
 		return err
 	}

@@ -14,7 +14,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-type archiveCreator func(string, []string, func(int)) error
+type archiveCreator func(string, string, []string, func(int)) error
 
 func TestCreateArchive(t *testing.T) {
 	t.Parallel()
@@ -31,7 +31,7 @@ func TestCreateArchive(t *testing.T) {
 	}{
 		{
 			name:     "zip preserves relative paths with progress",
-			create:   createZip,
+			create:   createZipFromRoot,
 			read:     readZipArchive,
 			destName: "result.zip",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -45,7 +45,7 @@ func TestCreateArchive(t *testing.T) {
 		},
 		{
 			name:     "tarball preserves relative paths with progress",
-			create:   createTarball,
+			create:   createTarballFromRoot,
 			read:     readTarballArchive,
 			destName: "result.tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -59,7 +59,7 @@ func TestCreateArchive(t *testing.T) {
 		},
 		{
 			name:     "zip allows duplicate basenames in different directories",
-			create:   createZip,
+			create:   createZipFromRoot,
 			read:     readZipArchive,
 			destName: "result.zip",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -73,7 +73,7 @@ func TestCreateArchive(t *testing.T) {
 		},
 		{
 			name:     "tarball allows duplicate basenames in different directories",
-			create:   createTarball,
+			create:   createTarballFromRoot,
 			read:     readTarballArchive,
 			destName: "result.tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -97,7 +97,7 @@ func TestCreateArchive(t *testing.T) {
 			files := tt.makeFiles(t, root)
 
 			var progress []int
-			err := tt.create(dest, files, func(percent int) {
+			err := tt.create(dest, "", files, func(percent int) {
 				progress = append(progress, percent)
 			})
 			if tt.wantErr {
