@@ -1,4 +1,4 @@
-package core
+package service
 
 import jobstore "github.com/jair/bulkdownload/internal/jobs"
 

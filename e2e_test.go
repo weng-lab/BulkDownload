@@ -18,9 +18,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jair/bulkdownload/api"
-	"github.com/jair/bulkdownload/core"
 	appconfig "github.com/jair/bulkdownload/internal/config"
 	"github.com/jair/bulkdownload/internal/jobs"
+	"github.com/jair/bulkdownload/internal/service"
 )
 
 type testApp struct {
@@ -42,8 +42,8 @@ func newTestApp(t *testing.T, config appconfig.Config) testApp {
 	}
 
 	jobStore := jobs.NewJobs()
-	manager := core.NewManager(jobStore, config)
-	stopCleanup := core.StartCleanup(jobStore, config.JobsDir, config.CleanupTick)
+	manager := service.NewManager(jobStore, config)
+	stopCleanup := service.StartCleanup(jobStore, config.JobsDir, config.CleanupTick)
 	t.Cleanup(stopCleanup)
 
 	mux := chi.NewRouter()
