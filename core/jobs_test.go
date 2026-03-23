@@ -290,52 +290,6 @@ func TestJobs_LifecycleMethodsReturnNotFound(t *testing.T) {
 	}
 }
 
-func TestJobs_Update(t *testing.T) {
-	t.Parallel()
-
-	jobs := NewJobs()
-	job := addLifecycleTestJob(t, jobs)
-
-	errBoom := errors.New("boom")
-	if err := jobs.Update(job.ID, func(stored *Job) error {
-		stored.Status = StatusProcessing
-		stored.Progress = 42
-		stored.Error = errBoom.Error()
-		return nil
-	}); err != nil {
-		t.Fatalf("Update() error = %v", err)
-	}
-
-	got, ok := jobs.Get(job.ID)
-	if !ok {
-		t.Fatalf("Get(%q) ok = false, want true", job.ID)
-	}
-	if diff := cmp.Diff(Job{
-		ID:        "job-1",
-		Type:      JobTypeZip,
-		Status:    StatusProcessing,
-		Progress:  42,
-		ExpiresAt: time.Unix(100, 0),
-		Error:     "boom",
-	}, got); diff != "" {
-		t.Errorf("updated job mismatch (-want +got):\n%s", diff)
-	}
-}
-
-func TestJobs_UpdateReturnsNotFound(t *testing.T) {
-	t.Parallel()
-
-	jobs := NewJobs()
-
-	err := jobs.Update("missing", func(job *Job) error {
-		job.Status = StatusDone
-		return nil
-	})
-	if !errors.Is(err, ErrJobNotFound) {
-		t.Fatalf("Update() error = %v, want %v", err, ErrJobNotFound)
-	}
-}
-
 func TestJobs_ExpiredReturnsSnapshots(t *testing.T) {
 	t.Parallel()
 

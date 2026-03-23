@@ -173,47 +173,6 @@ func (m *Manager) getJobOfType(jobID string, jobType JobType) (*Job, error) {
 	return &job, nil
 }
 
-func (m *Manager) setStatus(jobID string, status JobStatus) error {
-	return m.jobs.Update(jobID, func(job *Job) error {
-		job.Status = status
-		if status == StatusPending {
-			job.Progress = 0
-		}
-		return nil
-	})
-}
-
-func (m *Manager) setProgress(jobID string, progress int) error {
-	return m.jobs.Update(jobID, func(job *Job) error {
-		if progress < 0 {
-			progress = 0
-		}
-		if progress > 100 {
-			progress = 100
-		}
-		job.Progress = progress
-		return nil
-	})
-}
-
-func (m *Manager) setFailed(jobID string, err error) error {
-	return m.jobs.Update(jobID, func(job *Job) error {
-		job.Status = StatusFailed
-		job.Error = err.Error()
-		return nil
-	})
-}
-
-func (m *Manager) setDone(jobID, filename string) error {
-	return m.jobs.Update(jobID, func(job *Job) error {
-		job.Status = StatusDone
-		job.Progress = 100
-		job.Filename = filename
-		job.Error = ""
-		return nil
-	})
-}
-
 func randomJobID() string {
 	first := randomWord(jobIDWords)
 	second := randomWord(jobIDWords)

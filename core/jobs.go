@@ -121,10 +121,6 @@ func (j *Jobs) MarkDone(id, filename string) error {
 	})
 }
 
-func (j *Jobs) Update(id string, fn func(*Job) error) error {
-	return j.update(id, fn)
-}
-
 func (j *Jobs) update(id string, fn func(*Job) error) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
