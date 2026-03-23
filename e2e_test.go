@@ -10,11 +10,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/go-cmp/cmp"
 	"github.com/jair/bulkdownload/api"
 	"github.com/jair/bulkdownload/core"
 )
@@ -129,6 +131,65 @@ func TestEndToEndZipLifecycle(t *testing.T) {
 	if len(reader.File) != 2 {
 		t.Fatalf("expected 2 files in archive, got %d", len(reader.File))
 	}
+	if job.Status != core.StatusDone || job.Progress != 100 {
+		t.Fatalf("expected completed job, got %#v", job)
+	}
+}
+
+func TestEndToEndZipDownloadContract(t *testing.T) {
+	t.Parallel()
+
+	config := testConfig(t)
+	app := newTestApp(t, config)
+	writeAppSourceFile(t, config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+	writeAppSourceFile(t, config.SourceRootDir, "nested/bravo.txt", "bravo contents")
+
+	body := `{"type":"zip","files":["nested/alpha.txt","nested/bravo.txt"]}`
+	created := createJob(t, app.server.URL+"/jobs", body)
+	job := waitForDoneStatus(t, app.server.URL, created.ID)
+
+	resp, err := http.Get(app.server.URL + "/download/" + created.ID)
+	if err != nil {
+		t.Fatalf("download zip: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected download status %d, got %d: %s", http.StatusOK, resp.StatusCode, string(body))
+	}
+
+	if got := resp.Header.Get("Content-Disposition"); !strings.HasSuffix(got, ".zip\"") {
+		t.Fatalf("expected zip attachment, got %q", got)
+	}
+
+	bodyData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read zip body: %v", err)
+	}
+
+	archivePath := filepath.Join(t.TempDir(), "downloaded.zip")
+	if err := os.WriteFile(archivePath, bodyData, 0o644); err != nil {
+		t.Fatalf("write zip file: %v", err)
+	}
+
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		t.Fatalf("open zip: %v", err)
+	}
+	defer reader.Close()
+
+	var gotNames []string
+	for _, file := range reader.File {
+		gotNames = append(gotNames, file.Name)
+	}
+	sort.Strings(gotNames)
+
+	wantNames := []string{"nested/alpha.txt", "nested/bravo.txt"}
+	if diff := cmp.Diff(wantNames, gotNames); diff != "" {
+		t.Fatalf("downloaded zip entries mismatch (-want +got):\n%s", diff)
+	}
+
 	if job.Status != core.StatusDone || job.Progress != 100 {
 		t.Fatalf("expected completed job, got %#v", job)
 	}
