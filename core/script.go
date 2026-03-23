@@ -82,7 +82,7 @@ func (m *Manager) executeScriptJob(jobID string) error {
 		return err
 	}
 
-	if err := m.setStatus(jobID, StatusProcessing); err != nil {
+	if err := m.jobs.MarkProcessing(jobID); err != nil {
 		return err
 	}
 
@@ -90,11 +90,11 @@ func (m *Manager) executeScriptJob(jobID string) error {
 	outPath := filepath.Join(m.jobsDir, filename)
 	if err := createDownloadScript(outPath, m.publicBaseURL, m.downloadRootDir, job.Files); err != nil {
 		_ = cleanupFile(outPath)
-		_ = m.setFailed(jobID, err)
+		_ = m.jobs.MarkFailed(jobID, err)
 		return err
 	}
 
-	if err := m.setDone(jobID, filename); err != nil {
+	if err := m.jobs.MarkDone(jobID, filename); err != nil {
 		return err
 	}
 
