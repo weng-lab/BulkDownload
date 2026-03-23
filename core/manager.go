@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math/rand/v2"
 	"time"
 )
@@ -91,19 +92,52 @@ func newManager(jobs *Jobs, config Config, generateID func() string) *Manager {
 	}
 }
 
-func (m *Manager) CreateZipJob(files []string) (*Job, error) {
-	return m.createJob(JobTypeZip, files)
+func (m *Manager) DispatchZipJob(files []string) (Job, error) {
+	job, err := m.createJob(JobTypeZip, files)
+	if err != nil {
+		return Job{}, fmt.Errorf("create zip job: %w", err)
+	}
+
+	go func() {
+		if err := m.executeZipJob(job.ID); err != nil {
+			log.Printf("dispatch: zip job %s failed: %v", job.ID, err)
+		}
+	}()
+
+	return job, nil
 }
 
-func (m *Manager) CreateTarballJob(files []string) (*Job, error) {
-	return m.createJob(JobTypeTarball, files)
+func (m *Manager) DispatchTarballJob(files []string) (Job, error) {
+	job, err := m.createJob(JobTypeTarball, files)
+	if err != nil {
+		return Job{}, fmt.Errorf("create tarball job: %w", err)
+	}
+
+	go func() {
+		if err := m.executeTarballJob(job.ID); err != nil {
+			log.Printf("dispatch: tarball job %s failed: %v", job.ID, err)
+		}
+	}()
+
+	return job, nil
 }
 
-func (m *Manager) CreateScriptJob(files []string) (*Job, error) {
-	return m.createJob(JobTypeScript, files)
+func (m *Manager) DispatchScriptJob(files []string) (Job, error) {
+	job, err := m.createJob(JobTypeScript, files)
+	if err != nil {
+		return Job{}, fmt.Errorf("create script job: %w", err)
+	}
+
+	go func() {
+		if err := m.executeScriptJob(job.ID); err != nil {
+			log.Printf("dispatch: script job %s failed: %v", job.ID, err)
+		}
+	}()
+
+	return job, nil
 }
 
-func (m *Manager) createJob(jobType JobType, files []string) (*Job, error) {
+func (m *Manager) createJob(jobType JobType, files []string) (Job, error) {
 	expiresAt := time.Now().Add(m.jobTTL)
 	job := Job{
 		Type:      jobType,
@@ -119,17 +153,13 @@ func (m *Manager) createJob(jobType JobType, files []string) (*Job, error) {
 			if errors.Is(err, ErrJobExists) {
 				continue
 			}
-			return nil, err
+			return Job{}, err
 		}
 
-		createdJob, ok := m.jobs.Get(job.ID)
-		if !ok {
-			return nil, ErrJobNotFound
-		}
-		return &createdJob, nil
+		return job, nil
 	}
 
-	return nil, errors.New("generate job id: exhausted retries")
+	return Job{}, errors.New("generate job id: exhausted retries")
 }
 
 func (m *Manager) getJobOfType(jobID string, jobType JobType) (*Job, error) {
