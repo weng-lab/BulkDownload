@@ -2,6 +2,7 @@ package core
 
 import (
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -14,13 +15,29 @@ func SweepExpired(jobs *Jobs, jobsDir string, now time.Time) {
 	}
 }
 
-func StartCleanup(jobs *Jobs, jobsDir string, interval time.Duration) {
+func StartCleanup(jobs *Jobs, jobsDir string, interval time.Duration) func() {
 	ticker := time.NewTicker(interval)
+	stopCh := make(chan struct{})
+	done := make(chan struct{})
+	var once sync.Once
 
 	go func() {
 		defer ticker.Stop()
-		for now := range ticker.C {
-			SweepExpired(jobs, jobsDir, now)
+		defer close(done)
+		for {
+			select {
+			case <-stopCh:
+				return
+			case now := <-ticker.C:
+				SweepExpired(jobs, jobsDir, now)
+			}
 		}
 	}()
+
+	return func() {
+		once.Do(func() {
+			close(stopCh)
+			<-done
+		})
+	}
 }

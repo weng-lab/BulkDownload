@@ -127,7 +127,8 @@ func TestStartCleanup_SweepsOnTick(t *testing.T) {
 		t.Fatalf("WriteFile(%q) error = %v", archivePath, err)
 	}
 
-	StartCleanup(jobs, jobsDir, 10*time.Millisecond)
+	stopCleanup := StartCleanup(jobs, jobsDir, 10*time.Millisecond)
+	t.Cleanup(stopCleanup)
 
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
