@@ -76,7 +76,7 @@ type scriptTemplateFile struct {
 	LineSuffix string
 }
 
-func (m *Manager) ProcessScriptJob(jobID string) error {
+func (m *Manager) executeScriptJob(jobID string) error {
 	job, err := m.getJobOfType(jobID, JobTypeScript)
 	if err != nil {
 		return err
