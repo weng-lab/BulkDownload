@@ -42,9 +42,7 @@ func newTestApp(t *testing.T, config core.Config) testApp {
 	core.StartCleanup(jobs, config.JobsDir, config.CleanupTick)
 
 	mux := chi.NewRouter()
-	mux.Post("/zip", api.HandleCreateZip(manager, config))
-	mux.Post("/tarball", api.HandleCreateTarball(manager, config))
-	mux.Post("/script", api.HandleCreateScript(manager, config))
+	mux.Post("/jobs", api.HandleCreateJob(manager, config))
 	mux.Get("/status/{id}", api.HandleStatus(jobs))
 	mux.Get("/download/{id}", api.HandleDownload(jobs, config))
 
@@ -97,7 +95,8 @@ func TestEndToEndZipLifecycle(t *testing.T) {
 	writeAppSourceFile(t, config.SourceRootDir, "nested/alpha.txt", "alpha contents")
 	writeAppSourceFile(t, config.SourceRootDir, "nested/bravo.txt", "bravo contents")
 
-	created := createJob(t, app.server.URL+"/zip", `{"files":["nested/alpha.txt","nested/bravo.txt"]}`)
+	body := `{"type":"zip","files":["nested/alpha.txt","nested/bravo.txt"]}`
+	created := createJob(t, app.server.URL+"/jobs", body)
 	job := waitForDoneStatus(t, app.server.URL, created.ID)
 
 	resp, err := http.Get(app.server.URL + "/download/" + created.ID)
@@ -112,11 +111,11 @@ func TestEndToEndZipLifecycle(t *testing.T) {
 	}
 
 	archivePath := filepath.Join(t.TempDir(), "downloaded.zip")
-	body, err := io.ReadAll(resp.Body)
+	bodyData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read zip body: %v", err)
 	}
-	if err := os.WriteFile(archivePath, body, 0o644); err != nil {
+	if err := os.WriteFile(archivePath, bodyData, 0o644); err != nil {
 		t.Fatalf("write zip file: %v", err)
 	}
 
@@ -134,6 +133,36 @@ func TestEndToEndZipLifecycle(t *testing.T) {
 	}
 }
 
+func TestCreateZipRejectsAbsolutePaths(t *testing.T) {
+	t.Parallel()
+
+	config := testConfig(t)
+	app := newTestApp(t, config)
+	alphaPath := writeAppSourceFile(t, config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+	bravoPath := writeAppSourceFile(t, config.SourceRootDir, "nested/bravo.txt", "bravo contents")
+
+	body := `{"type":"zip","files":["` + alphaPath + `","` + bravoPath + `"]}`
+	resp, err := http.Post(app.server.URL+"/jobs", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("create zip job with absolute paths: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected create status %d, got %d: %s", http.StatusBadRequest, resp.StatusCode, string(body))
+	}
+
+	bodyData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read error response: %v", err)
+	}
+	want := "absolute paths are not allowed: " + alphaPath + "\n"
+	if string(bodyData) != want {
+		t.Fatalf("expected body %q, got %q", want, string(bodyData))
+	}
+}
+
 func TestEndToEndTarballLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -142,7 +171,8 @@ func TestEndToEndTarballLifecycle(t *testing.T) {
 	writeAppSourceFile(t, config.SourceRootDir, "nested/alpha.txt", "alpha contents")
 	writeAppSourceFile(t, config.SourceRootDir, "nested/bravo.txt", "bravo contents")
 
-	created := createJob(t, app.server.URL+"/tarball", `{"files":["nested/alpha.txt","nested/bravo.txt"]}`)
+	body := `{"type":"tarball","files":["nested/alpha.txt","nested/bravo.txt"]}`
+	created := createJob(t, app.server.URL+"/jobs", body)
 	job := waitForDoneStatus(t, app.server.URL, created.ID)
 
 	resp, err := http.Get(app.server.URL + "/download/" + created.ID)
@@ -157,11 +187,11 @@ func TestEndToEndTarballLifecycle(t *testing.T) {
 	}
 
 	archivePath := filepath.Join(t.TempDir(), "downloaded.tar.gz")
-	body, err := io.ReadAll(resp.Body)
+	bodyData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read tarball body: %v", err)
 	}
-	if err := os.WriteFile(archivePath, body, 0o644); err != nil {
+	if err := os.WriteFile(archivePath, bodyData, 0o644); err != nil {
 		t.Fatalf("write tarball file: %v", err)
 	}
 
@@ -206,7 +236,8 @@ func TestEndToEndScriptLifecycle(t *testing.T) {
 	writeAppSourceFile(t, config.SourceRootDir, "rna/accession.bigwig", "rna data")
 	writeAppSourceFile(t, config.SourceRootDir, "dna/sample.cram", "dna data")
 
-	created := createJob(t, app.server.URL+"/script", `{"files":["rna/accession.bigwig","dna/sample.cram"]}`)
+	body := `{"type":"script","files":["rna/accession.bigwig","dna/sample.cram"]}`
+	created := createJob(t, app.server.URL+"/jobs", body)
 	job := waitForDoneStatus(t, app.server.URL, created.ID)
 
 	resp, err := http.Get(app.server.URL + "/download/" + created.ID)
@@ -220,11 +251,11 @@ func TestEndToEndScriptLifecycle(t *testing.T) {
 		t.Fatalf("expected download status %d, got %d: %s", http.StatusOK, resp.StatusCode, string(body))
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	bodyData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read script body: %v", err)
 	}
-	content := string(body)
+	content := string(bodyData)
 	if !strings.Contains(content, "BASE_URL='https://download.mohd.org'") {
 		t.Fatalf("expected script to include base URL, got %q", content)
 	}
@@ -239,6 +270,24 @@ func TestEndToEndScriptLifecycle(t *testing.T) {
 	}
 }
 
+func TestLegacyScriptCreateEndpointIsRemoved(t *testing.T) {
+	t.Parallel()
+
+	config := testConfig(t)
+	app := newTestApp(t, config)
+
+	resp, err := http.Post(app.server.URL+"/script", "application/json", strings.NewReader(`{"files":["rna/accession.bigwig"]}`))
+	if err != nil {
+		t.Fatalf("post legacy script endpoint: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected legacy endpoint status %d, got %d: %s", http.StatusNotFound, resp.StatusCode, string(body))
+	}
+}
+
 func TestCleanupRemovesExpiredJobAndArtifact(t *testing.T) {
 	t.Parallel()
 
@@ -247,7 +296,8 @@ func TestCleanupRemovesExpiredJobAndArtifact(t *testing.T) {
 	app := newTestApp(t, config)
 	writeAppSourceFile(t, config.SourceRootDir, "rna/accession.bigwig", "rna data")
 
-	created := createJob(t, app.server.URL+"/script", `{"files":["rna/accession.bigwig"]}`)
+	body := `{"type":"script","files":["rna/accession.bigwig"]}`
+	created := createJob(t, app.server.URL+"/jobs", body)
 	job := waitForDoneStatus(t, app.server.URL, created.ID)
 	artifactPath := filepath.Join(config.JobsDir, job.Filename)
 	if _, err := os.Stat(artifactPath); err != nil {

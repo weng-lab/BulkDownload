@@ -4,9 +4,7 @@ BulkDownload is a small Go service that can either bundle requested files into a
 
 ## Endpoints
 
-- `POST /zip` creates a zip job from a list of file paths
-- `POST /tarball` creates a tarball job from a list of file paths
-- `POST /script` creates a shell script job from a list of relative file paths
+- `POST /jobs` creates a zip, tarball, or script job from a request body that includes `type` and `files`
 - `GET /status/{id}` returns the current job status
 - `GET /download/{id}` downloads the completed job artifact
 
@@ -21,11 +19,11 @@ Copy `.env.example` to `.env` if you want to override the output directory or ti
 Available config values:
 
 - `JOBS_DIR` stores generated job artifacts such as zip files and shell scripts
-- `SOURCE_ROOT_DIR` is an optional base directory for `/zip` and `/tarball`; when set, clients can submit relative paths and the service resolves them under this root
+- `SOURCE_ROOT_DIR` is an optional base directory for requested files; when set, clients can submit relative paths and the service resolves them under this root
 - `PUBLIC_BASE_URL` is used inside generated scripts for the file download base URL and should include the scheme, for example `http://localhost:9000`
 - `DOWNLOAD_ROOT_DIR` is the default local folder name used by generated scripts
 
-If `SOURCE_ROOT_DIR` is not set, `/zip` and `/tarball` continue to accept the file paths exactly as sent by the client.
+If `SOURCE_ROOT_DIR` is not set, job requests continue to accept the file paths exactly as sent by the client.
 
 ## Docker
 
@@ -54,7 +52,7 @@ Notes for container deploys:
 
 - Mount a writable host directory into `JOBS_DIR` so completed `.zip`, `.tar.gz`, and `.sh` files survive container replacement.
 - If you set `SOURCE_ROOT_DIR`, clients can submit relative paths like `study-a/sample1.bam` instead of container-specific absolute paths.
-- `/zip` and `/tarball` can only read files that exist inside the container, typically via a bind mount.
+- Archive jobs can only read files that exist inside the container, typically via a bind mount.
 - Job metadata is stored in memory only, so restarting the container forgets old job IDs even if artifact files are still present on disk.
 
 ## Local Script Test
@@ -98,29 +96,29 @@ This fetches `${API_BASE_URL:-http://localhost:8080}/download/<job-id>` and runs
 ## Example
 
 ```bash
-curl -X POST http://localhost:8080/zip \
+curl -X POST http://localhost:8080/jobs \
   -H "Content-Type: application/json" \
-  -d '{"files":["/absolute/path/to/file1.txt","/absolute/path/to/file2.txt"]}'
+  -d '{"type":"zip","files":["/absolute/path/to/file1.txt","/absolute/path/to/file2.txt"]}'
 ```
 
 ```bash
-curl -X POST http://localhost:8080/tarball \
+curl -X POST http://localhost:8080/jobs \
   -H "Content-Type: application/json" \
-  -d '{"files":["/absolute/path/to/file1.txt","/absolute/path/to/file2.txt"]}'
+  -d '{"type":"tarball","files":["/absolute/path/to/file1.txt","/absolute/path/to/file2.txt"]}'
 ```
 
-If `SOURCE_ROOT_DIR=/data/source`, the archive endpoints can also accept relative paths:
+If `SOURCE_ROOT_DIR=/data/source`, job requests can also accept relative paths:
 
 ```bash
-curl -X POST http://localhost:8080/zip \
+curl -X POST http://localhost:8080/jobs \
   -H "Content-Type: application/json" \
-  -d '{"files":["project-a/alpha.txt","project-a/bravo.txt"]}'
+  -d '{"type":"zip","files":["project-a/alpha.txt","project-a/bravo.txt"]}'
 ```
 
 ```bash
-curl -X POST http://localhost:8080/script \
+curl -X POST http://localhost:8080/jobs \
   -H "Content-Type: application/json" \
-  -d '{"files":["rna/accession.bigwig","dna/sample.cram"]}'
+  -d '{"type":"script","files":["rna/accession.bigwig","dna/sample.cram"]}'
 ```
 
 When a script job completes, your frontend can point users at:
