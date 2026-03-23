@@ -1,8 +1,8 @@
-package core
+package artifacts
 
 import "os"
 
-func cleanupFile(path string) error {
+func CleanupFile(path string) error {
 	err := os.Remove(path)
 	if err == nil || os.IsNotExist(err) {
 		return nil

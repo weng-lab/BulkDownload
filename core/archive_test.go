@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/jair/bulkdownload/internal/artifacts"
 )
 
 type archiveCreator func(string, string, []string, func(int)) error
@@ -31,7 +32,7 @@ func TestCreateArchive(t *testing.T) {
 	}{
 		{
 			name:     "zip preserves relative paths with progress",
-			create:   createZipFromRoot,
+			create:   artifacts.CreateZipFromRoot,
 			read:     readZipArchive,
 			destName: "result.zip",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -45,7 +46,7 @@ func TestCreateArchive(t *testing.T) {
 		},
 		{
 			name:     "tarball preserves relative paths with progress",
-			create:   createTarballFromRoot,
+			create:   artifacts.CreateTarballFromRoot,
 			read:     readTarballArchive,
 			destName: "result.tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -59,7 +60,7 @@ func TestCreateArchive(t *testing.T) {
 		},
 		{
 			name:     "zip allows duplicate basenames in different directories",
-			create:   createZipFromRoot,
+			create:   artifacts.CreateZipFromRoot,
 			read:     readZipArchive,
 			destName: "result.zip",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -73,7 +74,7 @@ func TestCreateArchive(t *testing.T) {
 		},
 		{
 			name:     "tarball allows duplicate basenames in different directories",
-			create:   createTarballFromRoot,
+			create:   artifacts.CreateTarballFromRoot,
 			read:     readTarballArchive,
 			destName: "result.tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -141,12 +142,12 @@ func TestCreateArchive_ReportsOneHundredBeforeReturn(t *testing.T) {
 	}{
 		{
 			name:     "zip reports completion before returning",
-			create:   createZipFromRoot,
+			create:   artifacts.CreateZipFromRoot,
 			destName: "result.zip",
 		},
 		{
 			name:     "tarball reports completion before returning",
-			create:   createTarballFromRoot,
+			create:   artifacts.CreateTarballFromRoot,
 			destName: "result.tar.gz",
 		},
 	}
