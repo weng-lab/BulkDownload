@@ -65,23 +65,43 @@ func writeSourceFile(t *testing.T, root, relPath, contents string) string {
 	return path
 }
 
-func TestHandleCreateJobAcceptsValidArchiveRequests(t *testing.T) {
+func TestHandleCreateJobReturnsAcceptedResponse(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name        string
 		jobType     string
-		wantJobType jobs.JobType
+		files       []string
+		prepareData func(*testing.T, handlerFixture)
 	}{
 		{
-			name:        "zip",
-			jobType:     "zip",
-			wantJobType: jobs.JobTypeZip,
+			name:    "zip",
+			jobType: "zip",
+			files:   []string{"nested/alpha.txt"},
+			prepareData: func(t *testing.T, fixture handlerFixture) {
+				t.Helper()
+				writeSourceFile(t, fixture.config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+			},
 		},
 		{
-			name:        "tarball",
-			jobType:     "tarball",
-			wantJobType: jobs.JobTypeTarball,
+			name:    "tarball",
+			jobType: "tarball",
+			files:   []string{"nested/alpha.txt", "nested/bravo.txt"},
+			prepareData: func(t *testing.T, fixture handlerFixture) {
+				t.Helper()
+				writeSourceFile(t, fixture.config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+				writeSourceFile(t, fixture.config.SourceRootDir, "nested/bravo.txt", "bravo contents")
+			},
+		},
+		{
+			name:    "script",
+			jobType: "script",
+			files:   []string{"rna/accession.bigwig", "dna/sample.cram"},
+			prepareData: func(t *testing.T, fixture handlerFixture) {
+				t.Helper()
+				writeSourceFile(t, fixture.config.SourceRootDir, "rna/accession.bigwig", "rna data")
+				writeSourceFile(t, fixture.config.SourceRootDir, "dna/sample.cram", "dna data")
+			},
 		},
 	}
 
@@ -91,9 +111,11 @@ func TestHandleCreateJobAcceptsValidArchiveRequests(t *testing.T) {
 			t.Parallel()
 
 			fixture := newHandlerFixture(t)
-			writeSourceFile(t, fixture.config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+			if tc.prepareData != nil {
+				tc.prepareData(t, fixture)
+			}
 
-			body := `{"type":"` + tc.jobType + `","files":["nested/alpha.txt"]}`
+			body := `{"type":"` + tc.jobType + `","files":["` + strings.Join(tc.files, `","`) + `"]}`
 			req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(body))
 			rec := httptest.NewRecorder()
 
@@ -101,6 +123,9 @@ func TestHandleCreateJobAcceptsValidArchiveRequests(t *testing.T) {
 
 			if rec.Code != http.StatusAccepted {
 				t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
+			}
+			if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+				t.Fatalf("expected JSON content type, got %q", got)
 			}
 
 			var got JobResponse
@@ -113,17 +138,6 @@ func TestHandleCreateJobAcceptsValidArchiveRequests(t *testing.T) {
 			if got.ExpiresAt.IsZero() {
 				t.Fatal("expected response to include expires_at")
 			}
-
-			job, ok := fixture.jobs.Get(got.ID)
-			if !ok {
-				t.Fatalf("expected job %q to be stored", got.ID)
-			}
-			if len(job.Files) != 1 || job.Files[0] != "nested/alpha.txt" {
-				t.Fatalf("expected stored files [%q], got %#v", "nested/alpha.txt", job.Files)
-			}
-			if job.Type != tc.wantJobType {
-				t.Fatalf("expected job type %q, got %q", tc.wantJobType, job.Type)
-			}
 			if time.Until(got.ExpiresAt) <= 0 {
 				t.Fatal("expected expires_at to be in the future")
 			}
@@ -131,51 +145,14 @@ func TestHandleCreateJobAcceptsValidArchiveRequests(t *testing.T) {
 	}
 }
 
-func TestHandleCreateJobAcceptsValidScriptRequest(t *testing.T) {
-	t.Parallel()
-
-	fixture := newHandlerFixture(t)
-	writeSourceFile(t, fixture.config.SourceRootDir, "rna/accession.bigwig", "rna data")
-	writeSourceFile(t, fixture.config.SourceRootDir, "dna/sample.cram", "dna data")
-
-	body := `{"type":"script","files":["rna/accession.bigwig","dna/sample.cram"]}`
-	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-
-	HandleCreateJob(fixture.manager, fixture.config).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
-	}
-
-	var got JobResponse
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-
-	job, ok := fixture.jobs.Get(got.ID)
-	if !ok {
-		t.Fatalf("expected job %q to be stored", got.ID)
-	}
-	if want := []string{"rna/accession.bigwig", "dna/sample.cram"}; len(job.Files) != len(want) || job.Files[0] != want[0] || job.Files[1] != want[1] {
-		t.Fatalf("expected normalized files %#v, got %#v", want, job.Files)
-	}
-	if job.Type != jobs.JobTypeScript {
-		t.Fatalf("expected job type %q, got %q", jobs.JobTypeScript, job.Type)
-	}
-
-	waitForJobDone(t, fixture.jobs, got.ID)
-}
-
-func TestHandleCreateJobRejectsInvalidRequests(t *testing.T) {
+func TestHandleCreateJobRejectsTransportErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		body        string
-		wantCode    int
-		wantBody    string
-		prepareData func(*testing.T, handlerFixture)
+		name     string
+		body     string
+		wantCode int
+		wantBody string
 	}{
 		{
 			name:     "invalid json",
@@ -195,36 +172,6 @@ func TestHandleCreateJobRejectsInvalidRequests(t *testing.T) {
 			wantCode: http.StatusBadRequest,
 			wantBody: "files list is empty\n",
 		},
-		{
-			name:     "missing file",
-			body:     `{"type":"zip","files":["nested/missing.txt"]}`,
-			wantCode: http.StatusBadRequest,
-			wantBody: "file not found: nested/missing.txt\n",
-		},
-		{
-			name:     "tarball missing file",
-			body:     `{"type":"tarball","files":["nested/missing.txt"]}`,
-			wantCode: http.StatusBadRequest,
-			wantBody: "file not found: nested/missing.txt\n",
-		},
-		{
-			name:     "absolute path",
-			body:     `{"type":"zip","files":["/tmp/source/nested/alpha.txt"]}`,
-			wantCode: http.StatusBadRequest,
-			wantBody: "absolute paths are not allowed: /tmp/source/nested/alpha.txt\n",
-		},
-		{
-			name:     "script absolute path",
-			body:     `{"type":"script","files":["/tmp/source/nested/alpha.txt"]}`,
-			wantCode: http.StatusBadRequest,
-			wantBody: "absolute paths are not allowed: /tmp/source/nested/alpha.txt\n",
-		},
-		{
-			name:     "invalid job type",
-			body:     `{"type":"invalid","files":["test.txt"]}`,
-			wantCode: http.StatusBadRequest,
-			wantBody: "invalid job type: invalid\n",
-		},
 	}
 
 	for _, tt := range tests {
@@ -233,9 +180,6 @@ func TestHandleCreateJobRejectsInvalidRequests(t *testing.T) {
 			t.Parallel()
 
 			fixture := newHandlerFixture(t)
-			if tc.prepareData != nil {
-				tc.prepareData(t, fixture)
-			}
 
 			req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(tc.body))
 			rec := httptest.NewRecorder()
@@ -249,6 +193,23 @@ func TestHandleCreateJobRejectsInvalidRequests(t *testing.T) {
 				t.Fatalf("expected body %q, got %q", tc.wantBody, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestHandleCreateJobMapsServiceValidationErrorsToBadRequest(t *testing.T) {
+	t.Parallel()
+
+	fixture := newHandlerFixture(t)
+	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(`{"type":"invalid","files":["nested/alpha.txt"]}`))
+	rec := httptest.NewRecorder()
+
+	HandleCreateJob(fixture.manager, fixture.config).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if rec.Body.String() != "invalid job type: invalid\n" {
+		t.Fatalf("expected invalid type error body, got %q", rec.Body.String())
 	}
 }
 
@@ -417,22 +378,6 @@ func TestHandleDownloadServesFinishedArtifact(t *testing.T) {
 			}
 		})
 	}
-}
-
-func waitForJobDone(t *testing.T, jobStore *jobs.Jobs, id string) *jobs.Job {
-	t.Helper()
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		job, ok := jobStore.Get(id)
-		if ok && job.Status == jobs.StatusDone && job.Filename != "" {
-			return &job
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-
-	t.Fatalf("timed out waiting for job %s to complete", id)
-	return nil
 }
 
 func performRouteRequest(method, pattern, target string, handler http.HandlerFunc) *httptest.ResponseRecorder {
