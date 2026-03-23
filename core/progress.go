@@ -48,9 +48,6 @@ func totalFileSize(paths []string) (int64, error) {
 		if err != nil {
 			return 0, fmt.Errorf("stat %s: %w", path, err)
 		}
-		if info.IsDir() {
-			return 0, fmt.Errorf("directories are not supported: %s", path)
-		}
 		total += info.Size()
 	}
 

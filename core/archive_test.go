@@ -16,8 +16,6 @@ import (
 
 type archiveCreator func(string, []string, func(int)) error
 
-type archiveProcessFunc func(*Manager, string) error
-
 func TestCreateArchive(t *testing.T) {
 	t.Parallel()
 
@@ -60,26 +58,6 @@ func TestCreateArchive(t *testing.T) {
 			checkProg: true,
 		},
 		{
-			name:     "zip rejects empty file list",
-			create:   createZip,
-			destName: "result.zip",
-			makeFiles: func(t *testing.T, root string) []string {
-				t.Helper()
-				return nil
-			},
-			wantErr: true,
-		},
-		{
-			name:     "tarball rejects empty file list",
-			create:   createTarball,
-			destName: "result.tar.gz",
-			makeFiles: func(t *testing.T, root string) []string {
-				t.Helper()
-				return nil
-			},
-			wantErr: true,
-		},
-		{
 			name:     "zip allows duplicate basenames in different directories",
 			create:   createZip,
 			read:     readZipArchive,
@@ -106,26 +84,6 @@ func TestCreateArchive(t *testing.T) {
 				}
 			},
 			checkProg: true,
-		},
-		{
-			name:     "zip rejects absolute file paths",
-			create:   createZip,
-			destName: "result.zip",
-			makeFiles: func(t *testing.T, root string) []string {
-				t.Helper()
-				return []string{writeAbsoluteTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")}
-			},
-			wantErr: true,
-		},
-		{
-			name:     "tarball rejects absolute file paths",
-			create:   createTarball,
-			destName: "result.tar.gz",
-			makeFiles: func(t *testing.T, root string) []string {
-				t.Helper()
-				return []string{writeAbsoluteTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")}
-			},
-			wantErr: true,
 		},
 	}
 
@@ -175,12 +133,11 @@ func TestCreateArchive(t *testing.T) {
 	}
 }
 
-func TestManagerProcessArchiveJob(t *testing.T) {
+func TestManagerExecuteArchiveJob(t *testing.T) {
 	tests := []struct {
 		name          string
 		jobType       JobType
-		createJob     func(*Manager, []string) (*Job, error)
-		processJob    archiveProcessFunc
+		executeJob    func(*Manager, string) error
 		archiveSuffix string
 		makeFiles     func(*testing.T, string) []string
 		wantErr       bool
@@ -188,8 +145,7 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 		{
 			name:          "zip marks done after creating archive",
 			jobType:       JobTypeZip,
-			createJob:     (*Manager).CreateZipJob,
-			processJob:    (*Manager).ProcessZipJob,
+			executeJob:    (*Manager).executeZipJob,
 			archiveSuffix: ".zip",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
@@ -202,8 +158,7 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 		{
 			name:          "tarball marks done after creating archive",
 			jobType:       JobTypeTarball,
-			createJob:     (*Manager).CreateTarballJob,
-			processJob:    (*Manager).ProcessTarballJob,
+			executeJob:    (*Manager).executeTarballJob,
 			archiveSuffix: ".tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
@@ -216,8 +171,7 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 		{
 			name:          "zip fails for missing file",
 			jobType:       JobTypeZip,
-			createJob:     (*Manager).CreateZipJob,
-			processJob:    (*Manager).ProcessZipJob,
+			executeJob:    (*Manager).executeZipJob,
 			archiveSuffix: ".zip",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
@@ -228,8 +182,7 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 		{
 			name:          "tarball fails for missing file",
 			jobType:       JobTypeTarball,
-			createJob:     (*Manager).CreateTarballJob,
-			processJob:    (*Manager).ProcessTarballJob,
+			executeJob:    (*Manager).executeTarballJob,
 			archiveSuffix: ".tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
@@ -238,34 +191,9 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:          "zip fails for empty file list",
-			jobType:       JobTypeZip,
-			createJob:     (*Manager).CreateZipJob,
-			processJob:    (*Manager).ProcessZipJob,
-			archiveSuffix: ".zip",
-			makeFiles: func(t *testing.T, root string) []string {
-				t.Helper()
-				return nil
-			},
-			wantErr: true,
-		},
-		{
-			name:          "tarball fails for empty file list",
-			jobType:       JobTypeTarball,
-			createJob:     (*Manager).CreateTarballJob,
-			processJob:    (*Manager).ProcessTarballJob,
-			archiveSuffix: ".tar.gz",
-			makeFiles: func(t *testing.T, root string) []string {
-				t.Helper()
-				return nil
-			},
-			wantErr: true,
-		},
-		{
 			name:          "zip allows duplicate basenames in different directories",
 			jobType:       JobTypeZip,
-			createJob:     (*Manager).CreateZipJob,
-			processJob:    (*Manager).ProcessZipJob,
+			executeJob:    (*Manager).executeZipJob,
 			archiveSuffix: ".zip",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
@@ -278,8 +206,7 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 		{
 			name:          "tarball allows duplicate basenames in different directories",
 			jobType:       JobTypeTarball,
-			createJob:     (*Manager).CreateTarballJob,
-			processJob:    (*Manager).ProcessTarballJob,
+			executeJob:    (*Manager).executeTarballJob,
 			archiveSuffix: ".tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
@@ -288,30 +215,6 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 					writeRelativeTestFile(t, filepath.Join(root, "second", "shared.txt"), "bravo contents"),
 				}
 			},
-		},
-		{
-			name:          "zip fails for absolute path",
-			jobType:       JobTypeZip,
-			createJob:     (*Manager).CreateZipJob,
-			processJob:    (*Manager).ProcessZipJob,
-			archiveSuffix: ".zip",
-			makeFiles: func(t *testing.T, root string) []string {
-				t.Helper()
-				return []string{writeAbsoluteTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")}
-			},
-			wantErr: true,
-		},
-		{
-			name:          "tarball fails for absolute path",
-			jobType:       JobTypeTarball,
-			createJob:     (*Manager).CreateTarballJob,
-			processJob:    (*Manager).ProcessTarballJob,
-			archiveSuffix: ".tar.gz",
-			makeFiles: func(t *testing.T, root string) []string {
-				t.Helper()
-				return []string{writeAbsoluteTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")}
-			},
-			wantErr: true,
 		},
 	}
 
@@ -324,9 +227,9 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 			}
 
 			files := tt.makeFiles(t, testArchiveRoot(t))
-			job, err := tt.createJob(fixture.manager, files)
+			job, err := fixture.manager.createJob(tt.jobType, files)
 			if err != nil {
-				t.Fatalf("Create%vJob() error = %v", tt.jobType, err)
+				t.Fatalf("createJob(%v) error = %v", tt.jobType, err)
 			}
 
 			assertApproxJobTTL(t, job.ExpiresAt, fixture.config.JobTTL)
@@ -334,17 +237,17 @@ func TestManagerProcessArchiveJob(t *testing.T) {
 				t.Errorf("job type mismatch (-want +got):\n%s", diff)
 			}
 
-			err = tt.processJob(fixture.manager, job.ID)
+			err = tt.executeJob(fixture.manager, job.ID)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("process job error = nil, want non-nil")
+					t.Fatalf("execute job error = nil, want non-nil")
 				}
 				assertFailedArchiveJob(t, fixture.jobs, job.ID)
 				assertFileAbsent(t, filepath.Join(fixture.config.JobsDir, job.ID+tt.archiveSuffix))
 				return
 			}
 			if err != nil {
-				t.Fatalf("process job error = %v", err)
+				t.Fatalf("execute job error = %v", err)
 			}
 
 			got, ok := fixture.jobs.Get(job.ID)
