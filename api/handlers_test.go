@@ -62,25 +62,22 @@ func writeSourceFile(t *testing.T, root, relPath, contents string) string {
 	return path
 }
 
-func TestHandleCreateArchiveAcceptsValidRequest(t *testing.T) {
+func TestHandleCreateJobAcceptsValidArchiveRequests(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name        string
-		path        string
-		handler     func(handlerFixture) http.HandlerFunc
+		jobType     string
 		wantJobType core.JobType
 	}{
 		{
 			name:        "zip",
-			path:        "/zip",
-			handler:     func(f handlerFixture) http.HandlerFunc { return HandleCreateZip(f.manager, f.config) },
+			jobType:     "zip",
 			wantJobType: core.JobTypeZip,
 		},
 		{
 			name:        "tarball",
-			path:        "/tarball",
-			handler:     func(f handlerFixture) http.HandlerFunc { return HandleCreateTarball(f.manager, f.config) },
+			jobType:     "tarball",
 			wantJobType: core.JobTypeTarball,
 		},
 	}
@@ -93,10 +90,11 @@ func TestHandleCreateArchiveAcceptsValidRequest(t *testing.T) {
 			fixture := newHandlerFixture(t)
 			writeSourceFile(t, fixture.config.SourceRootDir, "nested/alpha.txt", "alpha contents")
 
-			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(`{"files":["nested/alpha.txt"]}`))
+			body := `{"type":"` + tt.jobType + `","files":["nested/alpha.txt"]}`
+			req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(body))
 			rec := httptest.NewRecorder()
 
-			tt.handler(fixture).ServeHTTP(rec, req)
+			HandleCreateJob(fixture.manager, fixture.config).ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusAccepted {
 				t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
@@ -130,16 +128,18 @@ func TestHandleCreateArchiveAcceptsValidRequest(t *testing.T) {
 	}
 }
 
-func TestHandleCreateScriptAcceptsValidRequest(t *testing.T) {
+func TestHandleCreateJobAcceptsValidScriptRequest(t *testing.T) {
 	t.Parallel()
 
 	fixture := newHandlerFixture(t)
 	writeSourceFile(t, fixture.config.SourceRootDir, "rna/accession.bigwig", "rna data")
 	writeSourceFile(t, fixture.config.SourceRootDir, "dna/sample.cram", "dna data")
-	req := httptest.NewRequest(http.MethodPost, "/script", strings.NewReader(`{"files":["rna/accession.bigwig","dna/sample.cram"]}`))
+
+	body := `{"type":"script","files":["rna/accession.bigwig","dna/sample.cram"]}`
+	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	HandleCreateScript(fixture.manager, fixture.config).ServeHTTP(rec, req)
+	HandleCreateJob(fixture.manager, fixture.config).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
@@ -157,61 +157,58 @@ func TestHandleCreateScriptAcceptsValidRequest(t *testing.T) {
 	if want := []string{"rna/accession.bigwig", "dna/sample.cram"}; len(job.Files) != len(want) || job.Files[0] != want[0] || job.Files[1] != want[1] {
 		t.Fatalf("expected normalized files %#v, got %#v", want, job.Files)
 	}
+	if job.Type != core.JobTypeScript {
+		t.Fatalf("expected job type %q, got %q", core.JobTypeScript, job.Type)
+	}
 
 	waitForJobDone(t, fixture.jobs, got.ID)
 }
 
-func TestHandleCreateRejectsInvalidRequests(t *testing.T) {
+func TestHandleCreateJobRejectsInvalidRequests(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name        string
-		handler     func(handlerFixture) http.HandlerFunc
-		path        string
 		body        string
 		wantCode    int
 		wantBody    string
 		prepareData func(*testing.T, handlerFixture)
 	}{
 		{
-			name:     "zip invalid json",
-			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateZip(f.manager, f.config) },
-			path:     "/zip",
+			name:     "invalid json",
 			body:     `{`,
 			wantCode: http.StatusBadRequest,
 			wantBody: "invalid request body\n",
 		},
 		{
-			name:     "tarball empty files",
-			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateTarball(f.manager, f.config) },
-			path:     "/tarball",
-			body:     `{"files":[]}`,
+			name:     "missing type",
+			body:     `{"files":["test.txt"]}`,
+			wantCode: http.StatusBadRequest,
+			wantBody: "type is required\n",
+		},
+		{
+			name:     "empty files",
+			body:     `{"type":"zip","files":[]}`,
 			wantCode: http.StatusBadRequest,
 			wantBody: "files list is empty\n",
 		},
 		{
-			name:     "zip missing file",
-			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateZip(f.manager, f.config) },
-			path:     "/zip",
-			body:     `{"files":["nested/missing.txt"]}`,
+			name:     "missing file",
+			body:     `{"type":"zip","files":["nested/missing.txt"]}`,
 			wantCode: http.StatusBadRequest,
 			wantBody: "file not found: nested/missing.txt\n",
 		},
 		{
-			name:     "tarball outside source root",
-			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateTarball(f.manager, f.config) },
-			path:     "/tarball",
-			body:     `{"files":["../secret.txt"]}`,
+			name:     "absolute path",
+			body:     `{"type":"zip","files":["/tmp/source/nested/alpha.txt"]}`,
 			wantCode: http.StatusBadRequest,
-			wantBody: "file not found: ../secret.txt\n",
+			wantBody: "absolute paths are not allowed: /tmp/source/nested/alpha.txt\n",
 		},
 		{
-			name:     "script missing file",
-			handler:  func(f handlerFixture) http.HandlerFunc { return HandleCreateScript(f.manager, f.config) },
-			path:     "/script",
-			body:     `{"files":["../secret.txt"]}`,
+			name:     "invalid job type",
+			body:     `{"type":"invalid","files":["test.txt"]}`,
 			wantCode: http.StatusBadRequest,
-			wantBody: "file not found: ../secret.txt\n",
+			wantBody: "invalid job type: invalid\n",
 		},
 	}
 
@@ -225,10 +222,10 @@ func TestHandleCreateRejectsInvalidRequests(t *testing.T) {
 				tt.prepareData(t, fixture)
 			}
 
-			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(tt.body))
 			rec := httptest.NewRecorder()
 
-			tt.handler(fixture).ServeHTTP(rec, req)
+			HandleCreateJob(fixture.manager, fixture.config).ServeHTTP(rec, req)
 
 			if rec.Code != tt.wantCode {
 				t.Fatalf("expected status %d, got %d", tt.wantCode, rec.Code)
