@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/jair/bulkdownload/internal/jobs"
 )
 
 func (m *Manager) executeZipJob(jobID string) error {
-	job, err := m.GetJobOfType(jobID, JobTypeZip)
+	job, err := m.GetJobOfType(jobID, jobs.JobTypeZip)
 	if err != nil {
 		return err
 	}
@@ -37,7 +39,7 @@ func (m *Manager) executeZipJob(jobID string) error {
 }
 
 func (m *Manager) executeTarballJob(jobID string) error {
-	job, err := m.GetJobOfType(jobID, JobTypeTarball)
+	job, err := m.GetJobOfType(jobID, jobs.JobTypeTarball)
 	if err != nil {
 		return err
 	}

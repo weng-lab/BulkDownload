@@ -4,18 +4,20 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/jair/bulkdownload/internal/jobs"
 )
 
-func sweepExpired(jobs *Jobs, jobsDir string, now time.Time) {
-	for _, job := range jobs.Expired(now) {
+func sweepExpired(jobStore *jobs.Jobs, jobsDir string, now time.Time) {
+	for _, job := range jobStore.Expired(now) {
 		if job.Filename != "" {
 			_ = cleanupFile(filepath.Join(jobsDir, job.Filename))
 		}
-		jobs.Delete(job.ID)
+		jobStore.Delete(job.ID)
 	}
 }
 
-func StartCleanup(jobs *Jobs, jobsDir string, interval time.Duration) func() {
+func StartCleanup(jobStore *jobs.Jobs, jobsDir string, interval time.Duration) func() {
 	ticker := time.NewTicker(interval)
 	stopCh := make(chan struct{})
 	done := make(chan struct{})
@@ -29,7 +31,7 @@ func StartCleanup(jobs *Jobs, jobsDir string, interval time.Duration) func() {
 			case <-stopCh:
 				return
 			case now := <-ticker.C:
-				sweepExpired(jobs, jobsDir, now)
+				sweepExpired(jobStore, jobsDir, now)
 			}
 		}
 	}()

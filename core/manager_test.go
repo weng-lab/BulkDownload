@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	appconfig "github.com/jair/bulkdownload/internal/config"
 )
 
 func TestDispatchZipJob(t *testing.T) {
@@ -60,7 +61,7 @@ func TestDispatchZipJob(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			config := Config{
+			config := appconfig.Config{
 				JobsDir:       filepath.Join(t.TempDir(), "jobs"),
 				SourceRootDir: root,
 				JobTTL:        3 * time.Second,
@@ -126,7 +127,7 @@ func TestDispatchTarballJob(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	config := Config{
+	config := appconfig.Config{
 		JobsDir:       filepath.Join(t.TempDir(), "jobs"),
 		SourceRootDir: root,
 		JobTTL:        3 * time.Second,
@@ -175,7 +176,7 @@ func TestDispatchScriptJob(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	config := Config{
+	config := appconfig.Config{
 		JobsDir:         filepath.Join(t.TempDir(), "jobs"),
 		SourceRootDir:   root,
 		PublicBaseURL:   "https://download.mohd.org",
@@ -375,7 +376,7 @@ func TestDispatchJobMarksFailureWhenExecutionFails(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			config := Config{
+			config := appconfig.Config{
 				JobsDir:         filepath.Join(root, "missing", "jobs"),
 				SourceRootDir:   filepath.Join(root, "source"),
 				PublicBaseURL:   "https://download.mohd.org",

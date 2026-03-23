@@ -19,15 +19,17 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/jair/bulkdownload/api"
 	"github.com/jair/bulkdownload/core"
+	appconfig "github.com/jair/bulkdownload/internal/config"
+	"github.com/jair/bulkdownload/internal/jobs"
 )
 
 type testApp struct {
-	config core.Config
-	jobs   *core.Jobs
+	config appconfig.Config
+	jobs   *jobs.Jobs
 	server *httptest.Server
 }
 
-func newTestApp(t *testing.T, config core.Config) testApp {
+func newTestApp(t *testing.T, config appconfig.Config) testApp {
 	t.Helper()
 
 	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
@@ -39,15 +41,15 @@ func newTestApp(t *testing.T, config core.Config) testApp {
 		}
 	}
 
-	jobs := core.NewJobs()
-	manager := core.NewManager(jobs, config)
-	stopCleanup := core.StartCleanup(jobs, config.JobsDir, config.CleanupTick)
+	jobStore := jobs.NewJobs()
+	manager := core.NewManager(jobStore, config)
+	stopCleanup := core.StartCleanup(jobStore, config.JobsDir, config.CleanupTick)
 	t.Cleanup(stopCleanup)
 
 	mux := chi.NewRouter()
 	mux.Post("/jobs", api.HandleCreateJob(manager, config))
-	mux.Get("/status/{id}", api.HandleStatus(jobs))
-	mux.Get("/download/{id}", api.HandleDownload(jobs, config))
+	mux.Get("/status/{id}", api.HandleStatus(jobStore))
+	mux.Get("/download/{id}", api.HandleDownload(jobStore, config))
 
 	server := httptest.NewServer(mux)
 	t.Cleanup(func() {
@@ -56,16 +58,16 @@ func newTestApp(t *testing.T, config core.Config) testApp {
 
 	return testApp{
 		config: config,
-		jobs:   jobs,
+		jobs:   jobStore,
 		server: server,
 	}
 }
 
-func testConfig(t *testing.T) core.Config {
+func testConfig(t *testing.T) appconfig.Config {
 	t.Helper()
 
 	root := t.TempDir()
-	return core.Config{
+	return appconfig.Config{
 		JobsDir:         filepath.Join(root, "jobs"),
 		SourceRootDir:   filepath.Join(root, "source"),
 		PublicBaseURL:   "https://download.mohd.org",
@@ -131,7 +133,7 @@ func TestEndToEndZipLifecycle(t *testing.T) {
 	if len(reader.File) != 2 {
 		t.Fatalf("expected 2 files in archive, got %d", len(reader.File))
 	}
-	if job.Status != core.StatusDone || job.Progress != 100 {
+	if job.Status != jobs.StatusDone || job.Progress != 100 {
 		t.Fatalf("expected completed job, got %#v", job)
 	}
 }
@@ -190,7 +192,7 @@ func TestEndToEndZipDownloadContract(t *testing.T) {
 		t.Fatalf("downloaded zip entries mismatch (-want +got):\n%s", diff)
 	}
 
-	if job.Status != core.StatusDone || job.Progress != 100 {
+	if job.Status != jobs.StatusDone || job.Progress != 100 {
 		t.Fatalf("expected completed job, got %#v", job)
 	}
 }
@@ -285,7 +287,7 @@ func TestEndToEndTarballLifecycle(t *testing.T) {
 	if entryCount != 2 {
 		t.Fatalf("expected 2 files in tarball, got %d", entryCount)
 	}
-	if job.Status != core.StatusDone || job.Progress != 100 {
+	if job.Status != jobs.StatusDone || job.Progress != 100 {
 		t.Fatalf("expected completed job, got %#v", job)
 	}
 }
@@ -327,7 +329,7 @@ func TestEndToEndScriptLifecycle(t *testing.T) {
 	if !strings.Contains(content, "DOWNLOAD_ROOT=${DOWNLOAD_ROOT:-'mohd_data'}") {
 		t.Fatalf("expected script to include download root, got %q", content)
 	}
-	if job.Status != core.StatusDone {
+	if job.Status != jobs.StatusDone {
 		t.Fatalf("expected completed script job, got %#v", job)
 	}
 	if job.Progress != 0 {
@@ -433,10 +435,10 @@ func waitForDoneStatus(t *testing.T, baseURL, id string) api.JobStatusResponse {
 		}
 		resp.Body.Close()
 
-		if job.Status == core.StatusDone {
+		if job.Status == jobs.StatusDone {
 			return job
 		}
-		if job.Status == core.StatusFailed {
+		if job.Status == jobs.StatusFailed {
 			t.Fatalf("job %s failed: %s", id, job.Error)
 		}
 

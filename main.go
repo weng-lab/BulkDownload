@@ -9,10 +9,12 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jair/bulkdownload/api"
 	"github.com/jair/bulkdownload/core"
+	appconfig "github.com/jair/bulkdownload/internal/config"
+	"github.com/jair/bulkdownload/internal/jobs"
 )
 
 func main() {
-	config, err := core.LoadConfig()
+	config, err := appconfig.LoadConfig()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
@@ -20,17 +22,17 @@ func main() {
 		log.Fatalf("create jobs dir: %v", err)
 	}
 
-	jobs := core.NewJobs()
-	manager := core.NewManager(jobs, config)
+	jobStore := jobs.NewJobs()
+	manager := core.NewManager(jobStore, config)
 
-	core.StartCleanup(jobs, config.JobsDir, config.CleanupTick)
+	core.StartCleanup(jobStore, config.JobsDir, config.CleanupTick)
 
 	r := chi.NewRouter()
 	r.Use(cors.AllowAll().Handler)
 
 	r.Post("/jobs", api.HandleCreateJob(manager, config))
-	r.Get("/status/{id}", api.HandleStatus(jobs))
-	r.Get("/download/{id}", api.HandleDownload(jobs, config))
+	r.Get("/status/{id}", api.HandleStatus(jobStore))
+	r.Get("/download/{id}", api.HandleDownload(jobStore, config))
 
 	log.Printf(
 		"config: jobs_dir=%s source_root_dir=%s public_base_url=%s download_root_dir=%s port=%s job_ttl=%s cleanup_tick=%s",

@@ -12,9 +12,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jair/bulkdownload/core"
+	appconfig "github.com/jair/bulkdownload/internal/config"
+	"github.com/jair/bulkdownload/internal/jobs"
 )
 
-func HandleCreateJob(manager *core.Manager, config core.Config) http.HandlerFunc {
+func HandleCreateJob(manager *core.Manager, config appconfig.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req, err := decodeCreateJobRequest(r)
 		if err != nil {
@@ -34,13 +36,13 @@ func HandleCreateJob(manager *core.Manager, config core.Config) http.HandlerFunc
 			return
 		}
 
-		var job core.Job
+		var job jobs.Job
 		switch jobType {
-		case core.JobTypeZip:
+		case jobs.JobTypeZip:
 			job, err = manager.DispatchZipJob(files)
-		case core.JobTypeTarball:
+		case jobs.JobTypeTarball:
 			job, err = manager.DispatchTarballJob(files)
-		case core.JobTypeScript:
+		case jobs.JobTypeScript:
 			job, err = manager.DispatchScriptJob(files)
 		default:
 			http.Error(w, fmt.Sprintf("invalid job type: %s", jobType), http.StatusBadRequest)
@@ -58,16 +60,17 @@ func HandleCreateJob(manager *core.Manager, config core.Config) http.HandlerFunc
 	}
 }
 
-func parseJobType(raw string) (core.JobType, error) {
-	jobType := core.JobType(raw)
+func parseJobType(raw string) (jobs.JobType, error) {
+	jobType := jobs.JobType(raw)
 	switch jobType {
-	case core.JobTypeZip, core.JobTypeTarball, core.JobTypeScript:
+	case jobs.JobTypeZip, jobs.JobTypeTarball, jobs.JobTypeScript:
 		return jobType, nil
 	default:
 		return "", fmt.Errorf("invalid job type: %s", raw)
 	}
 }
-func HandleStatus(jobs *core.Jobs) http.HandlerFunc {
+
+func HandleStatus(jobStore *jobs.Jobs) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		if id == "" {
@@ -75,7 +78,7 @@ func HandleStatus(jobs *core.Jobs) http.HandlerFunc {
 			return
 		}
 
-		job, ok := jobs.Get(id)
+		job, ok := jobStore.Get(id)
 		if !ok {
 			log.Printf("status: job %s not found", id)
 			http.Error(w, "job not found", http.StatusNotFound)
@@ -88,7 +91,7 @@ func HandleStatus(jobs *core.Jobs) http.HandlerFunc {
 	}
 }
 
-func HandleDownload(jobs *core.Jobs, config core.Config) http.HandlerFunc {
+func HandleDownload(jobStore *jobs.Jobs, config appconfig.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		if id == "" {
@@ -96,13 +99,13 @@ func HandleDownload(jobs *core.Jobs, config core.Config) http.HandlerFunc {
 			return
 		}
 
-		job, ok := jobs.Get(id)
+		job, ok := jobStore.Get(id)
 		if !ok {
 			log.Printf("download: job %s not found", id)
 			http.Error(w, "job not found", http.StatusNotFound)
 			return
 		}
-		if job.Status != core.StatusDone {
+		if job.Status != jobs.StatusDone {
 			log.Printf("download: job %s not ready, current status %s", id, job.Status)
 			http.Error(w, "download is not ready yet", http.StatusConflict)
 			return
@@ -115,7 +118,7 @@ func HandleDownload(jobs *core.Jobs, config core.Config) http.HandlerFunc {
 	}
 }
 
-func writeAcceptedJobResponse(w http.ResponseWriter, job core.Job) {
+func writeAcceptedJobResponse(w http.ResponseWriter, job jobs.Job) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(JobResponse{
