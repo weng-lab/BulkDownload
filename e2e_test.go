@@ -227,6 +227,65 @@ func TestCreateZipRejectsAbsolutePaths(t *testing.T) {
 	}
 }
 
+func TestCreateJobRejectsInvalidTarballAndScriptRequests(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		buildBody func(*testing.T, appconfig.Config) string
+		wantBody  func(appconfig.Config) string
+	}{
+		{
+			name: "tarball missing file",
+			buildBody: func(_ *testing.T, _ appconfig.Config) string {
+				return `{"type":"tarball","files":["nested/missing.txt"]}`
+			},
+			wantBody: func(_ appconfig.Config) string {
+				return "file not found: nested/missing.txt\n"
+			},
+		},
+		{
+			name: "script absolute path",
+			buildBody: func(t *testing.T, config appconfig.Config) string {
+				path := writeAppSourceFile(t, config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+				return `{"type":"script","files":["` + path + `"]}`
+			},
+			wantBody: func(config appconfig.Config) string {
+				return "absolute paths are not allowed: " + filepath.Join(config.SourceRootDir, "nested", "alpha.txt") + "\n"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			config := testConfig(t)
+			app := newTestApp(t, config)
+
+			resp, err := http.Post(app.server.URL+"/jobs", "application/json", strings.NewReader(tt.buildBody(t, config)))
+			if err != nil {
+				t.Fatalf("create invalid job request: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusBadRequest {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("expected create status %d, got %d: %s", http.StatusBadRequest, resp.StatusCode, string(body))
+			}
+
+			bodyData, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("read error response: %v", err)
+			}
+			if got, want := string(bodyData), tt.wantBody(config); got != want {
+				t.Fatalf("expected body %q, got %q", want, got)
+			}
+		})
+	}
+}
+
 func TestEndToEndTarballLifecycle(t *testing.T) {
 	t.Parallel()
 

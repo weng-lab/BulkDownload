@@ -201,8 +201,20 @@ func TestHandleCreateJobRejectsInvalidRequests(t *testing.T) {
 			wantBody: "file not found: nested/missing.txt\n",
 		},
 		{
+			name:     "tarball missing file",
+			body:     `{"type":"tarball","files":["nested/missing.txt"]}`,
+			wantCode: http.StatusBadRequest,
+			wantBody: "file not found: nested/missing.txt\n",
+		},
+		{
 			name:     "absolute path",
 			body:     `{"type":"zip","files":["/tmp/source/nested/alpha.txt"]}`,
+			wantCode: http.StatusBadRequest,
+			wantBody: "absolute paths are not allowed: /tmp/source/nested/alpha.txt\n",
+		},
+		{
+			name:     "script absolute path",
+			body:     `{"type":"script","files":["/tmp/source/nested/alpha.txt"]}`,
 			wantCode: http.StatusBadRequest,
 			wantBody: "absolute paths are not allowed: /tmp/source/nested/alpha.txt\n",
 		},
