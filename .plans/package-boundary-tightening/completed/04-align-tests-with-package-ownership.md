@@ -19,10 +19,10 @@ Refocus tests so handler tests verify HTTP behavior and error mapping, service t
 
 ## Acceptance Criteria
 
-- [ ] Handler tests focus on HTTP behavior and error mapping instead of business validation internals.
-- [ ] Service tests clearly cover validation rules, routing, and typed error behavior.
-- [ ] End-to-end tests still prove the create/status/download/cleanup flows across supported job types.
-- [ ] The test suite passes with the new package boundary expectations.
+- [x] Handler tests focus on HTTP behavior and error mapping instead of business validation internals.
+- [x] Service tests clearly cover validation rules, routing, and typed error behavior.
+- [x] End-to-end tests still prove the create/status/download/cleanup flows across supported job types.
+- [x] The test suite passes with the new package boundary expectations.
 
 ## QA
 
@@ -37,4 +37,12 @@ Refocus tests so handler tests verify HTTP behavior and error mapping, service t
 
 ## Completion
 
-What was built. Key decisions made during implementation. Any deviations from the slice plan and why. Files created or modified. Anything the next slice should be aware of.
+**Built:** Refocused create-job handler tests on transport behavior and error mapping, clarified service-level `CreateJob` coverage around routing and typed validation, and extended end-to-end cleanup coverage across zip, tarball, and script jobs.
+
+**Decisions:** Kept the runtime code unchanged because the boundary shift was already implemented in earlier slices; this slice locks the ownership model in with tests that separate API concerns from service concerns.
+
+**Deviations:** No production code changes were needed, so the work stayed entirely in tests and slice bookkeeping rather than forcing additional refactors.
+
+**Files:** Modified `api/handlers_test.go`; modified `internal/service/create_job_test.go`; modified `e2e_test.go`; moved this slice to `completed/04-align-tests-with-package-ownership.md`.
+
+**Notes for next slice:** The package-boundary tightening plan is now fully covered by tests, with handler assertions scoped to HTTP behavior, service assertions scoped to request validation/routing, and end-to-end coverage still protecting lifecycle behavior for all supported job types.

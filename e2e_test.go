@@ -414,39 +414,78 @@ func TestLegacyScriptCreateEndpointIsRemoved(t *testing.T) {
 	}
 }
 
-func TestCleanupRemovesExpiredJobAndArtifact(t *testing.T) {
+func TestCleanupRemovesExpiredJobAndArtifactForSupportedJobTypes(t *testing.T) {
 	t.Parallel()
 
-	config := testConfig(t)
-	config.JobTTL = 120 * time.Millisecond
-	app := newTestApp(t, config)
-	writeAppSourceFile(t, config.SourceRootDir, "rna/accession.bigwig", "rna data")
-
-	body := `{"type":"script","files":["rna/accession.bigwig"]}`
-	created := createJob(t, app.server.URL+"/jobs", body)
-	job := waitForDoneStatus(t, app.server.URL, created.ID)
-	artifactPath := filepath.Join(config.JobsDir, job.Filename)
-	if _, err := os.Stat(artifactPath); err != nil {
-		t.Fatalf("expected artifact to exist before cleanup: %v", err)
+	tests := []struct {
+		name      string
+		body      string
+		setupData func(*testing.T, appconfig.Config)
+	}{
+		{
+			name: "zip",
+			body: `{"type":"zip","files":["nested/alpha.txt","nested/bravo.txt"]}`,
+			setupData: func(t *testing.T, config appconfig.Config) {
+				t.Helper()
+				writeAppSourceFile(t, config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+				writeAppSourceFile(t, config.SourceRootDir, "nested/bravo.txt", "bravo contents")
+			},
+		},
+		{
+			name: "tarball",
+			body: `{"type":"tarball","files":["nested/alpha.txt","nested/bravo.txt"]}`,
+			setupData: func(t *testing.T, config appconfig.Config) {
+				t.Helper()
+				writeAppSourceFile(t, config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+				writeAppSourceFile(t, config.SourceRootDir, "nested/bravo.txt", "bravo contents")
+			},
+		},
+		{
+			name: "script",
+			body: `{"type":"script","files":["rna/accession.bigwig"]}`,
+			setupData: func(t *testing.T, config appconfig.Config) {
+				t.Helper()
+				writeAppSourceFile(t, config.SourceRootDir, "rna/accession.bigwig", "rna data")
+			},
+		},
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		resp, err := http.Get(app.server.URL + "/status/" + created.ID)
-		if err != nil {
-			t.Fatalf("get status during cleanup wait: %v", err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode == http.StatusNotFound {
-			if _, err := os.Stat(artifactPath); !os.IsNotExist(err) {
-				t.Fatalf("expected artifact to be removed, stat err = %v", err)
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			config := testConfig(t)
+			config.JobTTL = 120 * time.Millisecond
+			app := newTestApp(t, config)
+			tt.setupData(t, config)
+
+			created := createJob(t, app.server.URL+"/jobs", tt.body)
+			job := waitForDoneStatus(t, app.server.URL, created.ID)
+			artifactPath := filepath.Join(config.JobsDir, job.Filename)
+			if _, err := os.Stat(artifactPath); err != nil {
+				t.Fatalf("expected artifact to exist before cleanup: %v", err)
 			}
-			return
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
 
-	t.Fatalf("timed out waiting for cleanup of job %s", created.ID)
+			deadline := time.Now().Add(2 * time.Second)
+			for time.Now().Before(deadline) {
+				resp, err := http.Get(app.server.URL + "/status/" + created.ID)
+				if err != nil {
+					t.Fatalf("get status during cleanup wait: %v", err)
+				}
+				resp.Body.Close()
+				if resp.StatusCode == http.StatusNotFound {
+					if _, err := os.Stat(artifactPath); !os.IsNotExist(err) {
+						t.Fatalf("expected artifact to be removed, stat err = %v", err)
+					}
+					return
+				}
+				time.Sleep(25 * time.Millisecond)
+			}
+
+			t.Fatalf("timed out waiting for cleanup of job %s", created.ID)
+		})
+	}
 }
 
 func createJob(t *testing.T, url, body string) api.JobResponse {

@@ -12,7 +12,7 @@ import (
 	"github.com/jair/bulkdownload/internal/jobs"
 )
 
-func TestCreateJobDispatchesSupportedRequests(t *testing.T) {
+func TestCreateJobRoutesSupportedRequestsThroughDispatchers(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -110,7 +110,7 @@ func TestCreateJobDispatchesSupportedRequests(t *testing.T) {
 	}
 }
 
-func TestCreateJobReturnsTypedRequestErrors(t *testing.T) {
+func TestCreateJobReturnsTypedValidationErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -199,6 +199,33 @@ func TestCreateJobReturnsTypedRequestErrors(t *testing.T) {
 				t.Errorf("CreateJob() error mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestCreateJobTrimsFilePathsBeforeDispatch(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTestFixture(t)
+	fixture.config.SourceRootDir = t.TempDir()
+	fixture.manager.sourceRootDir = fixture.config.SourceRootDir
+	if err := os.MkdirAll(fixture.config.JobsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", fixture.config.JobsDir, err)
+	}
+
+	writeTestFile(t, filepath.Join(fixture.config.SourceRootDir, "nested", "alpha.txt"), "alpha contents")
+
+	job, err := fixture.manager.CreateJob("zip", []string{"  nested/alpha.txt  "})
+	if err != nil {
+		t.Fatalf("CreateJob() error = %v", err)
+	}
+
+	if diff := cmp.Diff([]string{"nested/alpha.txt"}, job.Files); diff != "" {
+		t.Errorf("CreateJob() files mismatch (-want +got):\n%s", diff)
+	}
+
+	stored := waitForStoredJob(t, fixture.jobs, job.ID)
+	if diff := cmp.Diff([]string{"nested/alpha.txt"}, stored.Files); diff != "" {
+		t.Errorf("stored job files mismatch (-want +got):\n%s", diff)
 	}
 }
 
