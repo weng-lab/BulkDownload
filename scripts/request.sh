@@ -1,3 +1,5 @@
-curl -sS -X POST http://localhost:8080/script \
+api_url="${API_URL:-http://localhost:8080}"
+
+curl -sS -X POST "${api_url}/jobs" \
   -H "Content-Type: application/json" \
-  -d '{"files":["testdata/alpha.txt","testdata/bravo.txt"]}'
+  -d '{"type":"script","files":["testdata/alpha.txt","testdata/bravo.txt"]}'

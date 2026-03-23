@@ -28,9 +28,7 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(cors.AllowAll().Handler)
 
-	r.Post("/zip", api.HandleCreateZip(manager, config))
-	r.Post("/tarball", api.HandleCreateTarball(manager, config))
-	r.Post("/script", api.HandleCreateScript(manager, config))
+	r.Post("/jobs", api.HandleCreateJob(manager, config))
 	r.Get("/status/{id}", api.HandleStatus(jobs))
 	r.Get("/download/{id}", api.HandleDownload(jobs, config))
 
