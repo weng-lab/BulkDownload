@@ -85,10 +85,6 @@ func createZipFromRoot(dest, sourceRoot string, files []string, onProgress func(
 		}
 	}
 
-	if total > 0 && onProgress != nil {
-		onProgress(100)
-	}
-
 	return nil
 }
 
@@ -142,10 +138,6 @@ func createTarballFromRoot(dest, sourceRoot string, files []string, onProgress f
 		if err := addFileToTarball(tw, archiveSourcePath(sourceRoot, file), file, reporter); err != nil {
 			return fmt.Errorf("add %s: %w", file, err)
 		}
-	}
-
-	if total > 0 && onProgress != nil {
-		onProgress(100)
 	}
 
 	return nil

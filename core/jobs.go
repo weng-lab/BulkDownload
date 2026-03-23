@@ -114,7 +114,6 @@ func (j *Jobs) MarkFailed(id string, err error) error {
 func (j *Jobs) MarkDone(id, filename string) error {
 	return j.update(id, func(job *Job) error {
 		job.Status = StatusDone
-		job.Progress = 100
 		job.Filename = filename
 		job.Error = ""
 		return nil
