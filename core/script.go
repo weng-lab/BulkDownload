@@ -93,6 +93,9 @@ func (m *Manager) executeScriptJob(jobID string) error {
 		_ = m.jobs.MarkFailed(jobID, err)
 		return err
 	}
+	if err := m.jobs.SetProgress(jobID, 100); err != nil {
+		return err
+	}
 
 	if err := m.jobs.MarkDone(jobID, filename); err != nil {
 		return err

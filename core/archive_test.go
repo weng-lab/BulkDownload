@@ -133,6 +133,75 @@ func TestCreateArchive(t *testing.T) {
 	}
 }
 
+func TestCreateArchive_ReportsOneHundredBeforeReturn(t *testing.T) {
+	tests := []struct {
+		name     string
+		create   archiveCreator
+		destName string
+	}{
+		{
+			name:     "zip reports completion before returning",
+			create:   createZipFromRoot,
+			destName: "result.zip",
+		},
+		{
+			name:     "tarball reports completion before returning",
+			create:   createTarballFromRoot,
+			destName: "result.tar.gz",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			root := testArchiveRoot(t)
+			dest := filepath.Join(root, tt.destName)
+			files := []string{
+				writeRelativeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents"),
+				writeRelativeTestFile(t, filepath.Join(root, "nested", "bravo.txt"), "bravo contents"),
+			}
+
+			reported := make(chan struct{})
+			release := make(chan struct{})
+			done := make(chan error, 1)
+
+			go func() {
+				done <- tt.create(dest, "", files, func(progress int) {
+					if progress != 100 {
+						return
+					}
+
+					select {
+					case <-reported:
+					default:
+						close(reported)
+					}
+
+					<-release
+				})
+			}()
+
+			select {
+			case <-reported:
+			case <-time.After(2 * time.Second):
+				t.Fatal("timed out waiting for progress 100 update")
+			}
+
+			select {
+			case err := <-done:
+				t.Fatalf("create archive returned before progress callback released: %v", err)
+			default:
+			}
+
+			close(release)
+
+			if err := <-done; err != nil {
+				t.Fatalf("create archive error = %v", err)
+			}
+		})
+	}
+}
+
 func TestManagerExecuteArchiveJob(t *testing.T) {
 	tests := []struct {
 		name          string

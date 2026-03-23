@@ -225,6 +225,12 @@ func TestJobs_MarkDone(t *testing.T) {
 
 	jobs := NewJobs()
 	job := addLifecycleTestJob(t, jobs)
+	if err := jobs.SetProgress(job.ID, 42); err != nil {
+		t.Fatalf("SetProgress() error = %v", err)
+	}
+	if err := jobs.MarkFailed(job.ID, errors.New("boom")); err != nil {
+		t.Fatalf("MarkFailed() error = %v", err)
+	}
 
 	if err := jobs.MarkDone(job.ID, "job-1.zip"); err != nil {
 		t.Fatalf("MarkDone() error = %v", err)
@@ -237,7 +243,7 @@ func TestJobs_MarkDone(t *testing.T) {
 
 	want := job
 	want.Status = StatusDone
-	want.Progress = 100
+	want.Progress = 42
 	want.Filename = "job-1.zip"
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("MarkDone() mismatch (-want +got):\n%s", diff)

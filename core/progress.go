@@ -30,8 +30,8 @@ func (p *progressReporter) Add(n int) {
 
 	p.copied += int64(n)
 	percent := int((p.copied * 100) / p.total)
-	if percent >= 100 {
-		percent = 99
+	if percent > 100 {
+		percent = 100
 	}
 	if percent <= p.lastPercent {
 		return
