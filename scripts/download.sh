@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+api_url="${API_URL:-http://localhost:8080}"
 job_id="${1:?usage: $0 <job-id>}"
 
-base_url="${API_BASE_URL:-http://localhost:8080}"
+mkdir -p ./downloads
 
-curl -fsSL "${base_url%/}/download/${job_id}" | bash
+curl -fsSL -OJ "${api_url}/download/${job_id}" --output-dir ./downloads

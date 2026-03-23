@@ -1,4 +1,5 @@
 jobs/
+downloads/
 .env
 
 # test data
@@ -9,5 +10,4 @@ eb03.bigWig
 # AI
 .opencode
 .devserve
-.plans
 execute.sh
