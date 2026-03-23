@@ -1,8 +1,13 @@
 jobs/
 .env
-.opencode
-.devserve
-mohd_data
+
+# test data
 eb01.bigWig
 eb02.bigWig
 eb03.bigWig
+
+# AI
+.opencode
+.devserve
+.plans
+execute.sh
