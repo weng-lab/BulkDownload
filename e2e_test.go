@@ -39,7 +39,8 @@ func newTestApp(t *testing.T, config core.Config) testApp {
 
 	jobs := core.NewJobs()
 	manager := core.NewManager(jobs, config)
-	core.StartCleanup(jobs, config.JobsDir, config.CleanupTick)
+	stopCleanup := core.StartCleanup(jobs, config.JobsDir, config.CleanupTick)
+	t.Cleanup(stopCleanup)
 
 	mux := chi.NewRouter()
 	mux.Post("/jobs", api.HandleCreateJob(manager, config))
