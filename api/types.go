@@ -6,7 +6,8 @@ import (
 	"github.com/jair/bulkdownload/core"
 )
 
-type JobRequest struct {
+type CreateJobRequest struct {
+	Type  string   `json:"type"`
 	Files []string `json:"files"`
 }
 
