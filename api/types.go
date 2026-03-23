@@ -3,7 +3,7 @@ package api
 import (
 	"time"
 
-	"github.com/jair/bulkdownload/core"
+	"github.com/jair/bulkdownload/internal/jobs"
 )
 
 type CreateJobRequest struct {
@@ -18,15 +18,15 @@ type JobResponse struct {
 
 type JobStatusResponse struct {
 	ID        string         `json:"id"`
-	Type      core.JobType   `json:"type"`
-	Status    core.JobStatus `json:"status"`
+	Type      jobs.JobType   `json:"type"`
+	Status    jobs.JobStatus `json:"status"`
 	Progress  int            `json:"progress"`
 	ExpiresAt time.Time      `json:"expires_at"`
 	Error     string         `json:"error,omitempty"`
 	Filename  string         `json:"filename,omitempty"`
 }
 
-func newJobStatusResponse(job core.Job) JobStatusResponse {
+func newJobStatusResponse(job jobs.Job) JobStatusResponse {
 	return JobStatusResponse{
 		ID:        job.ID,
 		Type:      job.Type,

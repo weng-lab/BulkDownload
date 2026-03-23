@@ -12,11 +12,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jair/bulkdownload/core"
+	appconfig "github.com/jair/bulkdownload/internal/config"
+	"github.com/jair/bulkdownload/internal/jobs"
 )
 
 type handlerFixture struct {
-	config  core.Config
-	jobs    *core.Jobs
+	config  appconfig.Config
+	jobs    *jobs.Jobs
 	manager *core.Manager
 }
 
@@ -24,7 +26,7 @@ func newHandlerFixture(t *testing.T) handlerFixture {
 	t.Helper()
 
 	root := t.TempDir()
-	config := core.Config{
+	config := appconfig.Config{
 		JobsDir:         filepath.Join(root, "jobs"),
 		SourceRootDir:   filepath.Join(root, "source"),
 		PublicBaseURL:   "https://download.mohd.org",
@@ -40,11 +42,11 @@ func newHandlerFixture(t *testing.T) handlerFixture {
 		t.Fatalf("create source root dir: %v", err)
 	}
 
-	jobs := core.NewJobs()
+	jobStore := jobs.NewJobs()
 	return handlerFixture{
 		config:  config,
-		jobs:    jobs,
-		manager: core.NewManager(jobs, config),
+		jobs:    jobStore,
+		manager: core.NewManager(jobStore, config),
 	}
 }
 
@@ -68,17 +70,17 @@ func TestHandleCreateJobAcceptsValidArchiveRequests(t *testing.T) {
 	tests := []struct {
 		name        string
 		jobType     string
-		wantJobType core.JobType
+		wantJobType jobs.JobType
 	}{
 		{
 			name:        "zip",
 			jobType:     "zip",
-			wantJobType: core.JobTypeZip,
+			wantJobType: jobs.JobTypeZip,
 		},
 		{
 			name:        "tarball",
 			jobType:     "tarball",
-			wantJobType: core.JobTypeTarball,
+			wantJobType: jobs.JobTypeTarball,
 		},
 	}
 
@@ -157,8 +159,8 @@ func TestHandleCreateJobAcceptsValidScriptRequest(t *testing.T) {
 	if want := []string{"rna/accession.bigwig", "dna/sample.cram"}; len(job.Files) != len(want) || job.Files[0] != want[0] || job.Files[1] != want[1] {
 		t.Fatalf("expected normalized files %#v, got %#v", want, job.Files)
 	}
-	if job.Type != core.JobTypeScript {
-		t.Fatalf("expected job type %q, got %q", core.JobTypeScript, job.Type)
+	if job.Type != jobs.JobTypeScript {
+		t.Fatalf("expected job type %q, got %q", jobs.JobTypeScript, job.Type)
 	}
 
 	waitForJobDone(t, fixture.jobs, got.ID)
@@ -241,10 +243,10 @@ func TestHandleStatusReturnsStoredJob(t *testing.T) {
 	t.Parallel()
 
 	fixture := newHandlerFixture(t)
-	job := core.Job{
+	job := jobs.Job{
 		ID:        "job-123",
-		Type:      core.JobTypeZip,
-		Status:    core.StatusProcessing,
+		Type:      jobs.JobTypeZip,
+		Status:    jobs.StatusProcessing,
 		Progress:  37,
 		ExpiresAt: time.Now().Add(time.Minute),
 	}
@@ -285,10 +287,10 @@ func TestHandleDownloadReturnsConflictUntilReady(t *testing.T) {
 	t.Parallel()
 
 	fixture := newHandlerFixture(t)
-	job := core.Job{
+	job := jobs.Job{
 		ID:        "job-pending",
-		Type:      core.JobTypeZip,
-		Status:    core.StatusProcessing,
+		Type:      jobs.JobTypeZip,
+		Status:    jobs.StatusProcessing,
 		ExpiresAt: time.Now().Add(time.Minute),
 	}
 	if err := fixture.jobs.Add(job); err != nil {
@@ -325,10 +327,10 @@ func TestHandleDownloadServesFinishedArtifact(t *testing.T) {
 				t.Fatalf("write artifact: %v", err)
 			}
 
-			job := core.Job{
+			job := jobs.Job{
 				ID:        "job-done",
-				Type:      core.JobTypeZip,
-				Status:    core.StatusDone,
+				Type:      jobs.JobTypeZip,
+				Status:    jobs.StatusDone,
 				Filename:  tt.filename,
 				ExpiresAt: time.Now().Add(time.Minute),
 			}
@@ -352,13 +354,13 @@ func TestHandleDownloadServesFinishedArtifact(t *testing.T) {
 	}
 }
 
-func waitForJobDone(t *testing.T, jobs *core.Jobs, id string) *core.Job {
+func waitForJobDone(t *testing.T, jobStore *jobs.Jobs, id string) *jobs.Job {
 	t.Helper()
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		job, ok := jobs.Get(id)
-		if ok && job.Status == core.StatusDone && job.Filename != "" {
+		job, ok := jobStore.Get(id)
+		if ok && job.Status == jobs.StatusDone && job.Filename != "" {
 			return &job
 		}
 		time.Sleep(25 * time.Millisecond)

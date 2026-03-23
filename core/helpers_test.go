@@ -5,18 +5,21 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	appconfig "github.com/jair/bulkdownload/internal/config"
+	"github.com/jair/bulkdownload/internal/jobs"
 )
 
 type testFixture struct {
 	manager *Manager
-	jobs    *Jobs
-	config  Config
+	jobs    *jobs.Jobs
+	config  appconfig.Config
 }
 
-func testConfig(t *testing.T) Config {
+func testConfig(t *testing.T) appconfig.Config {
 	t.Helper()
 
-	return Config{
+	return appconfig.Config{
 		JobsDir:         filepath.Join(t.TempDir(), "jobs"),
 		PublicBaseURL:   "https://download.mohd.org",
 		DownloadRootDir: "mohd_data",
@@ -30,10 +33,10 @@ func newTestFixture(t *testing.T) testFixture {
 	t.Helper()
 
 	config := testConfig(t)
-	jobs := NewJobs()
+	jobStore := jobs.NewJobs()
 	return testFixture{
-		manager: NewManager(jobs, config),
-		jobs:    jobs,
+		manager: NewManager(jobStore, config),
+		jobs:    jobStore,
 		config:  config,
 	}
 }

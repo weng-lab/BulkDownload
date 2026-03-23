@@ -1,4 +1,4 @@
-package core
+package config
 
 import (
 	"errors"
@@ -226,4 +226,53 @@ func TestLoadConfig_EnvOverridesDotEnv(t *testing.T) {
 	if diff := cmp.Diff(45*time.Second, got.JobTTL); diff != "" {
 		t.Errorf("LoadConfig() job ttl mismatch (-want +got):\n%s", diff)
 	}
+}
+
+func clearConfigEnv(t *testing.T) {
+	t.Helper()
+
+	for _, key := range []string{
+		"JOBS_DIR",
+		"SOURCE_ROOT_DIR",
+		"PUBLIC_BASE_URL",
+		"DOWNLOAD_ROOT_DIR",
+		"PORT",
+		"JOB_TTL",
+		"CLEANUP_TICK",
+	} {
+		key := key
+		value, ok := os.LookupEnv(key)
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("Unsetenv(%q) error = %v", key, err)
+		}
+		t.Cleanup(func() {
+			var err error
+			if ok {
+				err = os.Setenv(key, value)
+			} else {
+				err = os.Unsetenv(key)
+			}
+			if err != nil {
+				t.Fatalf("restore env %q: %v", key, err)
+			}
+		})
+	}
+}
+
+func withWorkingDir(t *testing.T, dir string) {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir(%q) error = %v", dir, err)
+	}
+
+	t.Cleanup(func() {
+		if err := os.Chdir(wd); err != nil {
+			t.Fatalf("restore working dir %q: %v", wd, err)
+		}
+	})
 }

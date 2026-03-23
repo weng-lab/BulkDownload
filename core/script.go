@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/jair/bulkdownload/internal/jobs"
 )
 
 const downloadScriptTemplate = `#!/usr/bin/env bash
@@ -77,7 +79,7 @@ type scriptTemplateFile struct {
 }
 
 func (m *Manager) executeScriptJob(jobID string) error {
-	job, err := m.GetJobOfType(jobID, JobTypeScript)
+	job, err := m.GetJobOfType(jobID, jobs.JobTypeScript)
 	if err != nil {
 		return err
 	}
