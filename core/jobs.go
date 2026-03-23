@@ -82,7 +82,50 @@ func (j *Jobs) Get(id string) (Job, bool) {
 	return result, true
 }
 
+func (j *Jobs) MarkProcessing(id string) error {
+	return j.update(id, func(job *Job) error {
+		job.Status = StatusProcessing
+		return nil
+	})
+}
+
+func (j *Jobs) SetProgress(id string, progress int) error {
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 100 {
+		progress = 100
+	}
+
+	return j.update(id, func(job *Job) error {
+		job.Progress = progress
+		return nil
+	})
+}
+
+func (j *Jobs) MarkFailed(id string, err error) error {
+	return j.update(id, func(job *Job) error {
+		job.Status = StatusFailed
+		job.Error = err.Error()
+		return nil
+	})
+}
+
+func (j *Jobs) MarkDone(id, filename string) error {
+	return j.update(id, func(job *Job) error {
+		job.Status = StatusDone
+		job.Progress = 100
+		job.Filename = filename
+		job.Error = ""
+		return nil
+	})
+}
+
 func (j *Jobs) Update(id string, fn func(*Job) error) error {
+	return j.update(id, fn)
+}
+
+func (j *Jobs) update(id string, fn func(*Job) error) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
