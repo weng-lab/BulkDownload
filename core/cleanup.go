@@ -5,13 +5,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jair/bulkdownload/internal/artifacts"
 	"github.com/jair/bulkdownload/internal/jobs"
 )
 
 func sweepExpired(jobStore *jobs.Jobs, jobsDir string, now time.Time) {
 	for _, job := range jobStore.Expired(now) {
 		if job.Filename != "" {
-			_ = cleanupFile(filepath.Join(jobsDir, job.Filename))
+			_ = artifacts.CleanupFile(filepath.Join(jobsDir, job.Filename))
 		}
 		jobStore.Delete(job.ID)
 	}
