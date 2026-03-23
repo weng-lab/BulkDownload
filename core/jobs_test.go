@@ -123,19 +123,178 @@ func TestJobs_AddRejectsDuplicateID(t *testing.T) {
 	}
 }
 
+func TestJobs_MarkProcessing(t *testing.T) {
+	t.Parallel()
+
+	jobs := NewJobs()
+	job := addLifecycleTestJob(t, jobs)
+
+	if err := jobs.MarkProcessing(job.ID); err != nil {
+		t.Fatalf("MarkProcessing() error = %v", err)
+	}
+
+	got, ok := jobs.Get(job.ID)
+	if !ok {
+		t.Fatalf("Get(%q) ok = false, want true", job.ID)
+	}
+
+	want := job
+	want.Status = StatusProcessing
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("MarkProcessing() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestJobs_SetProgress(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		progress     int
+		wantProgress int
+	}{
+		{
+			name:         "clamps negative progress",
+			progress:     -5,
+			wantProgress: 0,
+		},
+		{
+			name:         "keeps in-range progress",
+			progress:     42,
+			wantProgress: 42,
+		},
+		{
+			name:         "clamps progress above one hundred",
+			progress:     150,
+			wantProgress: 100,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			jobs := NewJobs()
+			job := addLifecycleTestJob(t, jobs)
+
+			if err := jobs.SetProgress(job.ID, tt.progress); err != nil {
+				t.Fatalf("SetProgress() error = %v", err)
+			}
+
+			got, ok := jobs.Get(job.ID)
+			if !ok {
+				t.Fatalf("Get(%q) ok = false, want true", job.ID)
+			}
+
+			want := job
+			want.Progress = tt.wantProgress
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("SetProgress() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestJobs_MarkFailed(t *testing.T) {
+	t.Parallel()
+
+	jobs := NewJobs()
+	job := addLifecycleTestJob(t, jobs)
+
+	errBoom := errors.New("boom")
+	if err := jobs.MarkFailed(job.ID, errBoom); err != nil {
+		t.Fatalf("MarkFailed() error = %v", err)
+	}
+
+	got, ok := jobs.Get(job.ID)
+	if !ok {
+		t.Fatalf("Get(%q) ok = false, want true", job.ID)
+	}
+
+	want := job
+	want.Status = StatusFailed
+	want.Error = errBoom.Error()
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("MarkFailed() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestJobs_MarkDone(t *testing.T) {
+	t.Parallel()
+
+	jobs := NewJobs()
+	job := addLifecycleTestJob(t, jobs)
+
+	if err := jobs.MarkDone(job.ID, "job-1.zip"); err != nil {
+		t.Fatalf("MarkDone() error = %v", err)
+	}
+
+	got, ok := jobs.Get(job.ID)
+	if !ok {
+		t.Fatalf("Get(%q) ok = false, want true", job.ID)
+	}
+
+	want := job
+	want.Status = StatusDone
+	want.Progress = 100
+	want.Filename = "job-1.zip"
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("MarkDone() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestJobs_LifecycleMethodsReturnNotFound(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		run  func(*Jobs) error
+	}{
+		{
+			name: "MarkProcessing",
+			run: func(jobs *Jobs) error {
+				return jobs.MarkProcessing("missing")
+			},
+		},
+		{
+			name: "SetProgress",
+			run: func(jobs *Jobs) error {
+				return jobs.SetProgress("missing", 42)
+			},
+		},
+		{
+			name: "MarkFailed",
+			run: func(jobs *Jobs) error {
+				return jobs.MarkFailed("missing", errors.New("boom"))
+			},
+		},
+		{
+			name: "MarkDone",
+			run: func(jobs *Jobs) error {
+				return jobs.MarkDone("missing", "job-1.zip")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			jobs := NewJobs()
+			if err := tt.run(jobs); !errors.Is(err, ErrJobNotFound) {
+				t.Fatalf("%s() error = %v, want %v", tt.name, err, ErrJobNotFound)
+			}
+		})
+	}
+}
+
 func TestJobs_Update(t *testing.T) {
 	t.Parallel()
 
 	jobs := NewJobs()
-	job := Job{
-		ID:        "job-1",
-		Type:      JobTypeZip,
-		Status:    StatusPending,
-		ExpiresAt: time.Unix(100, 0),
-	}
-	if err := jobs.Add(job); err != nil {
-		t.Fatalf("Add() error = %v", err)
-	}
+	job := addLifecycleTestJob(t, jobs)
 
 	errBoom := errors.New("boom")
 	if err := jobs.Update(job.ID, func(stored *Job) error {
@@ -205,4 +364,20 @@ func TestJobs_ExpiredReturnsSnapshots(t *testing.T) {
 	if diff := cmp.Diff([]string{"alpha.txt"}, got.Files); diff != "" {
 		t.Errorf("Expired() leaked internal state (-want +got):\n%s", diff)
 	}
+}
+
+func addLifecycleTestJob(t *testing.T, jobs *Jobs) Job {
+	t.Helper()
+
+	job := Job{
+		ID:        "job-1",
+		Type:      JobTypeZip,
+		Status:    StatusPending,
+		ExpiresAt: time.Unix(100, 0),
+	}
+	if err := jobs.Add(job); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	return job
 }
