@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jair/bulkdownload/internal/artifacts"
+	jobstore "github.com/jair/bulkdownload/internal/jobs"
 )
 
 type archiveCreator func(string, string, []string, func(int)) error
@@ -206,7 +207,7 @@ func TestCreateArchive_ReportsOneHundredBeforeReturn(t *testing.T) {
 func TestManagerExecuteArchiveJob(t *testing.T) {
 	tests := []struct {
 		name          string
-		jobType       JobType
+		jobType       jobstore.JobType
 		executeJob    func(*Manager, string) error
 		archiveSuffix string
 		makeFiles     func(*testing.T, string) []string
@@ -214,7 +215,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 	}{
 		{
 			name:          "zip marks done after creating archive",
-			jobType:       JobTypeZip,
+			jobType:       jobstore.JobTypeZip,
 			executeJob:    (*Manager).executeZipJob,
 			archiveSuffix: ".zip",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -227,7 +228,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 		},
 		{
 			name:          "tarball marks done after creating archive",
-			jobType:       JobTypeTarball,
+			jobType:       jobstore.JobTypeTarball,
 			executeJob:    (*Manager).executeTarballJob,
 			archiveSuffix: ".tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -240,7 +241,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 		},
 		{
 			name:          "zip fails for missing file",
-			jobType:       JobTypeZip,
+			jobType:       jobstore.JobTypeZip,
 			executeJob:    (*Manager).executeZipJob,
 			archiveSuffix: ".zip",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -251,7 +252,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 		},
 		{
 			name:          "tarball fails for missing file",
-			jobType:       JobTypeTarball,
+			jobType:       jobstore.JobTypeTarball,
 			executeJob:    (*Manager).executeTarballJob,
 			archiveSuffix: ".tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -262,7 +263,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 		},
 		{
 			name:          "zip allows duplicate basenames in different directories",
-			jobType:       JobTypeZip,
+			jobType:       jobstore.JobTypeZip,
 			executeJob:    (*Manager).executeZipJob,
 			archiveSuffix: ".zip",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -275,7 +276,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 		},
 		{
 			name:          "tarball allows duplicate basenames in different directories",
-			jobType:       JobTypeTarball,
+			jobType:       jobstore.JobTypeTarball,
 			executeJob:    (*Manager).executeTarballJob,
 			archiveSuffix: ".tar.gz",
 			makeFiles: func(t *testing.T, root string) []string {
@@ -328,10 +329,10 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 			if got.Filename == "" {
 				t.Fatalf("processed job filename = %q, want non-empty", got.Filename)
 			}
-			want := Job{
+			want := jobstore.Job{
 				ID:        job.ID,
 				Type:      tt.jobType,
-				Status:    StatusDone,
+				Status:    jobstore.StatusDone,
 				Progress:  100,
 				ExpiresAt: job.ExpiresAt,
 				Files:     append([]string(nil), files...),
@@ -362,10 +363,10 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 	}
 }
 
-func readArchiveByType(t *testing.T, path string, jobType JobType) map[string]string {
+func readArchiveByType(t *testing.T, path string, jobType jobstore.JobType) map[string]string {
 	t.Helper()
 
-	if jobType == JobTypeZip {
+	if jobType == jobstore.JobTypeZip {
 		return readZipArchive(t, path)
 	}
 
@@ -381,15 +382,15 @@ func assertApproxJobTTL(t *testing.T, expiresAt time.Time, wantTTL time.Duration
 	}
 }
 
-func assertFailedArchiveJob(t *testing.T, jobs *Jobs, jobID string) {
+func assertFailedArchiveJob(t *testing.T, jobs *jobstore.Jobs, jobID string) {
 	t.Helper()
 
 	got, ok := jobs.Get(jobID)
 	if !ok {
 		t.Fatalf("Get(%q) ok = false, want true", jobID)
 	}
-	if got.Status != StatusFailed {
-		t.Errorf("job status = %q, want %q", got.Status, StatusFailed)
+	if got.Status != jobstore.StatusFailed {
+		t.Errorf("job status = %q, want %q", got.Status, jobstore.StatusFailed)
 	}
 	if got.Progress != 0 {
 		t.Errorf("job progress = %d, want 0", got.Progress)
