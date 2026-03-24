@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	appconfig "github.com/jair/bulkdownload/internal/config"
+	jobstore "github.com/jair/bulkdownload/internal/jobs"
 )
 
 func TestDispatchZipJob(t *testing.T) {
@@ -19,7 +20,7 @@ func TestDispatchZipJob(t *testing.T) {
 		seedExisting []string
 		generatedIDs []string
 		makeFiles    func(*testing.T, string) []string
-		wantJob      Job
+		wantJob      jobstore.Job
 		wantCalls    int
 	}{
 		{
@@ -30,10 +31,10 @@ func TestDispatchZipJob(t *testing.T) {
 				writeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")
 				return []string{"alpha.txt"}
 			},
-			wantJob: Job{
+			wantJob: jobstore.Job{
 				ID:     "codon-bam",
-				Type:   JobTypeZip,
-				Status: StatusPending,
+				Type:   jobstore.JobTypeZip,
+				Status: jobstore.StatusPending,
 			},
 			wantCalls: 1,
 		},
@@ -46,10 +47,10 @@ func TestDispatchZipJob(t *testing.T) {
 				writeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")
 				return []string{"alpha.txt"}
 			},
-			wantJob: Job{
+			wantJob: jobstore.Job{
 				ID:     "codon-bam",
-				Type:   JobTypeZip,
-				Status: StatusPending,
+				Type:   jobstore.JobTypeZip,
+				Status: jobstore.StatusPending,
 			},
 			wantCalls: 2,
 		},
@@ -70,9 +71,9 @@ func TestDispatchZipJob(t *testing.T) {
 				t.Fatalf("MkdirAll(%q) error = %v", config.JobsDir, err)
 			}
 
-			jobs := NewJobs()
+			jobs := jobstore.NewJobs()
 			for _, id := range tt.seedExisting {
-				if err := jobs.Add(Job{ID: id, Type: JobTypeZip, ExpiresAt: time.Unix(100, 0)}); err != nil {
+				if err := jobs.Add(jobstore.Job{ID: id, Type: jobstore.JobTypeZip, ExpiresAt: time.Unix(100, 0)}); err != nil {
 					t.Fatalf("Add(%q) error = %v", id, err)
 				}
 			}
@@ -110,10 +111,10 @@ func TestDispatchZipJob(t *testing.T) {
 			deadline := time.Now().Add(2 * time.Second)
 			for time.Now().Before(deadline) {
 				stored, ok := jobs.Get(job.ID)
-				if ok && stored.Status == StatusDone {
+				if ok && stored.Status == jobstore.StatusDone {
 					return
 				}
-				if ok && stored.Status == StatusFailed {
+				if ok && stored.Status == jobstore.StatusFailed {
 					t.Fatalf("job failed: %s", stored.Error)
 				}
 				time.Sleep(25 * time.Millisecond)
@@ -139,7 +140,7 @@ func TestDispatchTarballJob(t *testing.T) {
 	writeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")
 	files := []string{"alpha.txt"}
 
-	jobs := NewJobs()
+	jobs := jobstore.NewJobs()
 	manager := newManager(jobs, config, func() string { return "codon-bam" })
 
 	job, err := manager.DispatchTarballJob(files)
@@ -150,21 +151,21 @@ func TestDispatchTarballJob(t *testing.T) {
 	if job.ID != "codon-bam" {
 		t.Errorf("job.ID = %q, want %q", job.ID, "codon-bam")
 	}
-	if job.Type != JobTypeTarball {
-		t.Errorf("job.Type = %q, want %q", job.Type, JobTypeTarball)
+	if job.Type != jobstore.JobTypeTarball {
+		t.Errorf("job.Type = %q, want %q", job.Type, jobstore.JobTypeTarball)
 	}
-	if job.Status != StatusPending {
-		t.Errorf("job.Status = %q, want %q", job.Status, StatusPending)
+	if job.Status != jobstore.StatusPending {
+		t.Errorf("job.Status = %q, want %q", job.Status, jobstore.StatusPending)
 	}
 
 	// Wait for job to complete
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		stored, ok := jobs.Get(job.ID)
-		if ok && stored.Status == StatusDone {
+		if ok && stored.Status == jobstore.StatusDone {
 			return
 		}
-		if ok && stored.Status == StatusFailed {
+		if ok && stored.Status == jobstore.StatusFailed {
 			t.Fatalf("job failed: %s", stored.Error)
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -190,7 +191,7 @@ func TestDispatchScriptJob(t *testing.T) {
 	writeTestFile(t, filepath.Join(root, "alpha.txt"), "alpha contents")
 	files := []string{"alpha.txt"}
 
-	jobs := NewJobs()
+	jobs := jobstore.NewJobs()
 	manager := newManager(jobs, config, func() string { return "codon-bam" })
 
 	job, err := manager.DispatchScriptJob(files)
@@ -201,21 +202,21 @@ func TestDispatchScriptJob(t *testing.T) {
 	if job.ID != "codon-bam" {
 		t.Errorf("job.ID = %q, want %q", job.ID, "codon-bam")
 	}
-	if job.Type != JobTypeScript {
-		t.Errorf("job.Type = %q, want %q", job.Type, JobTypeScript)
+	if job.Type != jobstore.JobTypeScript {
+		t.Errorf("job.Type = %q, want %q", job.Type, jobstore.JobTypeScript)
 	}
-	if job.Status != StatusPending {
-		t.Errorf("job.Status = %q, want %q", job.Status, StatusPending)
+	if job.Status != jobstore.StatusPending {
+		t.Errorf("job.Status = %q, want %q", job.Status, jobstore.StatusPending)
 	}
 
 	// Wait for job to complete
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		stored, ok := jobs.Get(job.ID)
-		if ok && stored.Status == StatusDone {
+		if ok && stored.Status == jobstore.StatusDone {
 			return
 		}
-		if ok && stored.Status == StatusFailed {
+		if ok && stored.Status == jobstore.StatusFailed {
 			t.Fatalf("job failed: %s", stored.Error)
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -228,7 +229,7 @@ func TestDispatchJobReturnsStoredSnapshot(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		dispatch func(*Manager, []string) (Job, error)
+		dispatch func(*Manager, []string) (jobstore.Job, error)
 	}{
 		{
 			name:     "zip job",
@@ -258,7 +259,7 @@ func TestDispatchJobReturnsStoredSnapshot(t *testing.T) {
 			writeTestFile(t, filepath.Join(config.SourceRootDir, "file.txt"), "contents")
 			files := []string{"file.txt"}
 
-			jobs := NewJobs()
+			jobs := jobstore.NewJobs()
 			manager := newManager(jobs, config, func() string { return "codon-bam" })
 
 			job, err := tt.dispatch(manager, files)
@@ -287,22 +288,22 @@ func TestDispatchJobCopiesRequestedFiles(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		jobType  JobType
-		dispatch func(*Manager, []string) (Job, error)
+		jobType  jobstore.JobType
+		dispatch func(*Manager, []string) (jobstore.Job, error)
 	}{
 		{
 			name:     "zip job",
-			jobType:  JobTypeZip,
+			jobType:  jobstore.JobTypeZip,
 			dispatch: (*Manager).DispatchZipJob,
 		},
 		{
 			name:     "tarball job",
-			jobType:  JobTypeTarball,
+			jobType:  jobstore.JobTypeTarball,
 			dispatch: (*Manager).DispatchTarballJob,
 		},
 		{
 			name:     "script job",
-			jobType:  JobTypeScript,
+			jobType:  jobstore.JobTypeScript,
 			dispatch: (*Manager).DispatchScriptJob,
 		},
 	}
@@ -321,7 +322,7 @@ func TestDispatchJobCopiesRequestedFiles(t *testing.T) {
 			writeTestFile(t, filepath.Join(config.SourceRootDir, "variants", "sample.vcf"), "variants")
 			files := []string{"reads/sample.fastq", "variants/sample.vcf"}
 
-			manager := newManager(NewJobs(), config, func() string { return "codon-bam" })
+			manager := newManager(jobstore.NewJobs(), config, func() string { return "codon-bam" })
 
 			job, err := tt.dispatch(manager, files)
 			if err != nil {
@@ -338,7 +339,7 @@ func TestDispatchJobCopiesRequestedFiles(t *testing.T) {
 			if diff := cmp.Diff(tt.jobType, job.Type); diff != "" {
 				t.Errorf("job.Type mismatch (-want +got):\n%s", diff)
 			}
-			if diff := cmp.Diff(StatusPending, job.Status); diff != "" {
+			if diff := cmp.Diff(jobstore.StatusPending, job.Status); diff != "" {
 				t.Errorf("job.Status mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -350,22 +351,22 @@ func TestDispatchJobMarksFailureWhenExecutionFails(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		jobType  JobType
-		dispatch func(*Manager, []string) (Job, error)
+		jobType  jobstore.JobType
+		dispatch func(*Manager, []string) (jobstore.Job, error)
 	}{
 		{
 			name:     "zip job",
-			jobType:  JobTypeZip,
+			jobType:  jobstore.JobTypeZip,
 			dispatch: (*Manager).DispatchZipJob,
 		},
 		{
 			name:     "tarball job",
-			jobType:  JobTypeTarball,
+			jobType:  jobstore.JobTypeTarball,
 			dispatch: (*Manager).DispatchTarballJob,
 		},
 		{
 			name:     "script job",
-			jobType:  JobTypeScript,
+			jobType:  jobstore.JobTypeScript,
 			dispatch: (*Manager).DispatchScriptJob,
 		},
 	}
@@ -388,21 +389,21 @@ func TestDispatchJobMarksFailureWhenExecutionFails(t *testing.T) {
 			}
 			writeTestFile(t, filepath.Join(config.SourceRootDir, "alpha.txt"), "alpha contents")
 
-			jobs := NewJobs()
+			jobs := jobstore.NewJobs()
 			manager := newManager(jobs, config, func() string { return "codon-bam" })
 
 			job, err := tt.dispatch(manager, []string{"alpha.txt"})
 			if err != nil {
 				t.Fatalf("dispatch(%q) error = %v", tt.jobType, err)
 			}
-			if diff := cmp.Diff(StatusPending, job.Status); diff != "" {
+			if diff := cmp.Diff(jobstore.StatusPending, job.Status); diff != "" {
 				t.Errorf("job.Status mismatch (-want +got):\n%s", diff)
 			}
 
 			deadline := time.Now().Add(2 * time.Second)
 			for time.Now().Before(deadline) {
 				stored, ok := jobs.Get(job.ID)
-				if ok && stored.Status == StatusFailed {
+				if ok && stored.Status == jobstore.StatusFailed {
 					if stored.Error == "" {
 						t.Fatal("expected failed job to record an error")
 					}
@@ -423,8 +424,8 @@ func TestDispatchZipJobReturnsErrorWhenJobCreationFails(t *testing.T) {
 	t.Parallel()
 
 	config := testConfig(t)
-	jobs := NewJobs()
-	if err := jobs.Add(Job{ID: "allele-atac", Type: JobTypeZip, ExpiresAt: time.Unix(100, 0)}); err != nil {
+	jobs := jobstore.NewJobs()
+	if err := jobs.Add(jobstore.Job{ID: "allele-atac", Type: jobstore.JobTypeZip, ExpiresAt: time.Unix(100, 0)}); err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
 
@@ -434,7 +435,7 @@ func TestDispatchZipJobReturnsErrorWhenJobCreationFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("DispatchZipJob() error = nil, want non-nil")
 	}
-	if diff := cmp.Diff(Job{}, job); diff != "" {
+	if diff := cmp.Diff(jobstore.Job{}, job); diff != "" {
 		t.Errorf("DispatchZipJob() job mismatch (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff("create zip job: generate job id: exhausted retries", err.Error()); diff != "" {
