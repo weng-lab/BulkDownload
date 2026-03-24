@@ -1,7 +1,7 @@
 downloads/
 .env
 
-# test data
+# large test data
 eb01.bigWig
 eb02.bigWig
 eb03.bigWig
