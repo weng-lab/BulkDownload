@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	jobstore "github.com/jair/bulkdownload/internal/jobs"
 )
 
 func TestManagerExecuteScriptJob(t *testing.T) {
@@ -16,9 +17,9 @@ func TestManagerExecuteScriptJob(t *testing.T) {
 		t.Fatalf("MkdirAll(%q) error = %v", fixture.config.JobsDir, err)
 	}
 
-	job, err := fixture.manager.createJob(JobTypeScript, []string{"rna/accession.bigwig", "dna/sample.cram"})
+	job, err := fixture.manager.createJob(jobstore.JobTypeScript, []string{"rna/accession.bigwig", "dna/sample.cram"})
 	if err != nil {
-		t.Fatalf("createJob(%q) error = %v", JobTypeScript, err)
+		t.Fatalf("createJob(%q) error = %v", jobstore.JobTypeScript, err)
 	}
 
 	if err := fixture.manager.executeScriptJob(job.ID); err != nil {
@@ -34,10 +35,10 @@ func TestManagerExecuteScriptJob(t *testing.T) {
 		t.Fatal("processed script job filename = \"\", want non-empty")
 	}
 
-	want := Job{
+	want := jobstore.Job{
 		ID:        job.ID,
-		Type:      JobTypeScript,
-		Status:    StatusDone,
+		Type:      jobstore.JobTypeScript,
+		Status:    jobstore.StatusDone,
 		ExpiresAt: job.ExpiresAt,
 		Files:     []string{"rna/accession.bigwig", "dna/sample.cram"},
 		Filename:  got.Filename,
