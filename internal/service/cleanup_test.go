@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	jobstore "github.com/jair/bulkdownload/internal/jobs"
 )
 
 func TestSweepExpired(t *testing.T) {
@@ -16,7 +17,7 @@ func TestSweepExpired(t *testing.T) {
 
 	tests := []struct {
 		name                string
-		jobs                []Job
+		jobs                []jobstore.Job
 		files               map[string]string
 		wantRemainingJobIDs []string
 		wantRemovedFiles    []string
@@ -24,9 +25,9 @@ func TestSweepExpired(t *testing.T) {
 	}{
 		{
 			name: "removes expired download with generated file",
-			jobs: []Job{
-				{ID: "expired", Type: JobTypeZip, Status: StatusDone, Filename: "expired.zip", ExpiresAt: now.Add(-time.Second)},
-				{ID: "active", Type: JobTypeZip, Status: StatusDone, Filename: "active.zip", ExpiresAt: now.Add(time.Second)},
+			jobs: []jobstore.Job{
+				{ID: "expired", Type: jobstore.JobTypeZip, Status: jobstore.StatusDone, Filename: "expired.zip", ExpiresAt: now.Add(-time.Second)},
+				{ID: "active", Type: jobstore.JobTypeZip, Status: jobstore.StatusDone, Filename: "active.zip", ExpiresAt: now.Add(time.Second)},
 			},
 			files: map[string]string{
 				"expired.zip": "zip bytes",
@@ -38,16 +39,16 @@ func TestSweepExpired(t *testing.T) {
 		},
 		{
 			name: "removes expired job when output file is already gone",
-			jobs: []Job{
-				{ID: "expired", Type: JobTypeScript, Status: StatusDone, Filename: "missing.sh", ExpiresAt: now.Add(-time.Second)},
+			jobs: []jobstore.Job{
+				{ID: "expired", Type: jobstore.JobTypeScript, Status: jobstore.StatusDone, Filename: "missing.sh", ExpiresAt: now.Add(-time.Second)},
 			},
 			wantRemovedFiles: []string{"missing.sh"},
 		},
 		{
 			name: "removes expired job without output filename",
-			jobs: []Job{
-				{ID: "expired", Type: JobTypeTarball, Status: StatusFailed, ExpiresAt: now.Add(-time.Second)},
-				{ID: "active", Type: JobTypeTarball, Status: StatusPending, ExpiresAt: now.Add(time.Second)},
+			jobs: []jobstore.Job{
+				{ID: "expired", Type: jobstore.JobTypeTarball, Status: jobstore.StatusFailed, ExpiresAt: now.Add(-time.Second)},
+				{ID: "active", Type: jobstore.JobTypeTarball, Status: jobstore.StatusPending, ExpiresAt: now.Add(time.Second)},
 			},
 			wantRemainingJobIDs: []string{"active"},
 		},
@@ -59,9 +60,9 @@ func TestSweepExpired(t *testing.T) {
 			t.Parallel()
 
 			jobsDir := t.TempDir()
-			jobs := NewJobs()
+			store := jobstore.NewJobs()
 			for _, job := range tt.jobs {
-				if err := jobs.Add(job); err != nil {
+				if err := store.Add(job); err != nil {
 					t.Fatalf("Add(%q) error = %v", job.ID, err)
 				}
 			}
@@ -76,11 +77,11 @@ func TestSweepExpired(t *testing.T) {
 				}
 			}
 
-			sweepExpired(jobs, jobsDir, now)
+			sweepExpired(store, jobsDir, now)
 
 			var gotRemainingJobIDs []string
 			for _, job := range tt.jobs {
-				if _, ok := jobs.Get(job.ID); ok {
+				if _, ok := store.Get(job.ID); ok {
 					gotRemainingJobIDs = append(gotRemainingJobIDs, job.ID)
 				}
 			}
@@ -109,16 +110,16 @@ func TestStartCleanup_SweepsOnTick(t *testing.T) {
 	t.Parallel()
 
 	jobsDir := t.TempDir()
-	jobs := NewJobs()
+	store := jobstore.NewJobs()
 	now := time.Now()
-	job := Job{
+	job := jobstore.Job{
 		ID:        "expired",
-		Type:      JobTypeZip,
-		Status:    StatusDone,
+		Type:      jobstore.JobTypeZip,
+		Status:    jobstore.StatusDone,
 		Filename:  "expired.zip",
 		ExpiresAt: now.Add(-time.Second),
 	}
-	if err := jobs.Add(job); err != nil {
+	if err := store.Add(job); err != nil {
 		t.Fatalf("Add(%q) error = %v", job.ID, err)
 	}
 
@@ -127,18 +128,18 @@ func TestStartCleanup_SweepsOnTick(t *testing.T) {
 		t.Fatalf("WriteFile(%q) error = %v", archivePath, err)
 	}
 
-	stopCleanup := StartCleanup(jobs, jobsDir, 10*time.Millisecond)
+	stopCleanup := StartCleanup(store, jobsDir, 10*time.Millisecond)
 	t.Cleanup(stopCleanup)
 
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		if _, ok := jobs.Get(job.ID); !ok {
+		if _, ok := store.Get(job.ID); !ok {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if _, ok := jobs.Get(job.ID); ok {
+	if _, ok := store.Get(job.ID); ok {
 		t.Fatal("Get(expired) ok = true, want false after cleanup tick")
 	}
 	if _, err := os.Stat(archivePath); !os.IsNotExist(err) {
