@@ -30,8 +30,14 @@ Add a GitHub Actions CI workflow that runs on pull requests and pushes to `main`
 
 ---
 
-*Appended after execution.*
-
 ## Completion
 
-What was built. Key decisions made during implementation. Any deviations from the slice plan and why. Files created or modified. Anything the next slice should be aware of.
+**Built:** Added `.github/workflows/ci.yml` to run GitHub Actions CI on pull requests and pushes to `main`, with `go test ./...` followed by `go build .`.
+
+**Decisions:** Used `actions/setup-go` with `go-version-file: go.mod` so CI follows the repository's declared Go toolchain, and kept the workflow to a single test-and-build job for a straightforward baseline validation path.
+
+**Deviations:** Did not execute the GitHub-hosted trigger checks from the QA list locally because those require pushing a branch or opening a pull request in GitHub; local verification covered the workflow contents plus successful `go test ./...` and `go build .` execution.
+
+**Files:** Added `.github/workflows/ci.yml`; updated and moved this slice record to `.plans/github-actions-cicd/completed/01-add-baseline-ci-workflow.md`.
+
+**Notes for next slice:** Release automation can assume baseline CI now uses the repo Go version and validates the app with the same `go test ./...` and `go build .` commands that should be reused before Docker publishing.
