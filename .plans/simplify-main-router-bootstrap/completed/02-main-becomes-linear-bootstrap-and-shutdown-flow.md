@@ -36,4 +36,12 @@ Reshape `main` so it reads top-to-bottom like the desired sketch: load config, c
 
 ## Completion
 
-What was built. Key decisions made during implementation. Any deviations from the slice plan and why. Files created or modified. Anything the next slice should be aware of.
+**Built:** Inlined the server bootstrap and graceful-shutdown flow inside `run`, so startup now reads as directory setup, dependency construction, cleanup start, router/server setup, serve, and shutdown; updated `main` to register signals directly and refreshed tests around the new orchestration shape.
+
+**Decisions:** Kept `run` as the single testable orchestration entrypoint while removing the extra lifecycle helpers; introduced small package-level hooks for serving, shutdown, cleanup, and signal registration so tests can validate timeout config and shutdown behavior without reintroducing the old helper layer.
+
+**Deviations:** None.
+
+**Files:** `main.go`, `main_test.go`, `.plans/simplify-main-router-bootstrap/completed/02-main-becomes-linear-bootstrap-and-shutdown-flow.md`
+
+**Notes for next slice:** No further slices are pending in `simplify-main-router-bootstrap`; the plan's bootstrap/router refactor is now complete.
