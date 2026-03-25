@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -19,7 +24,10 @@ const (
 	httpServerReadHeaderTimeout = 5 * time.Second
 	httpServerReadTimeout       = 30 * time.Second
 	httpServerIdleTimeout       = 2 * time.Minute
+	httpServerShutdownTimeout   = 10 * time.Second
 )
+
+var shutdownSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
 
 func newRouter(manager *service.Manager, jobStore *jobs.Jobs, config appconfig.Config) http.Handler {
 	r := chi.NewRouter()
@@ -42,21 +50,60 @@ func newHTTPServer(config appconfig.Config, handler http.Handler) *http.Server {
 	}
 }
 
-func main() {
-	config, err := appconfig.LoadConfig()
-	if err != nil {
-		log.Fatalf("load config: %v", err)
+type lifecycleServer interface {
+	ListenAndServe() error
+	Shutdown(context.Context) error
+}
+
+func newShutdownContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(parent, shutdownSignals...)
+}
+
+func serveUntilShutdown(ctx context.Context, server lifecycleServer, stopCleanup func()) error {
+	var stopOnce sync.Once
+	safeStopCleanup := func() {
+		if stopCleanup == nil {
+			return
+		}
+		stopOnce.Do(stopCleanup)
 	}
+	defer safeStopCleanup()
+
+	serverErrCh := make(chan error, 1)
+	go func() {
+		err := server.ListenAndServe()
+		if errors.Is(err, http.ErrServerClosed) {
+			serverErrCh <- nil
+			return
+		}
+		serverErrCh <- err
+	}()
+
+	select {
+	case err := <-serverErrCh:
+		return err
+	case <-ctx.Done():
+		safeStopCleanup()
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), httpServerShutdownTimeout)
+		defer cancel()
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutdown server: %w", err)
+		}
+
+		return <-serverErrCh
+	}
+}
+
+func run(ctx context.Context, config appconfig.Config) error {
 	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
-		log.Fatalf("create jobs dir: %v", err)
+		return fmt.Errorf("create jobs dir: %w", err)
 	}
 
 	jobStore := jobs.NewJobs()
 	manager := service.NewManager(jobStore, config)
-
 	stopCleanup := service.StartCleanup(jobStore, config.JobsDir, config.CleanupTick)
-	defer stopCleanup()
-
 	server := newHTTPServer(config, newRouter(manager, jobStore, config))
 
 	log.Printf(
@@ -70,7 +117,19 @@ func main() {
 		config.CleanupTick,
 	)
 	log.Printf("bulk download service listening on :%s", config.Port)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+
+	return serveUntilShutdown(ctx, server, stopCleanup)
+}
+
+func main() {
+	config, err := appconfig.LoadConfig()
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+	ctx, stop := newShutdownContext(context.Background())
+	defer stop()
+
+	if err := run(ctx, config); err != nil {
 		log.Fatal(err)
 	}
 }
