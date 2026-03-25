@@ -38,4 +38,12 @@ Add a GitHub Actions release workflow that runs when a GitHub Release is publish
 
 ## Completion
 
-What was built. Key decisions made during implementation. Any deviations from the slice plan and why. Files created or modified. Anything the next slice should be aware of.
+**Built:** Added `.github/workflows/release.yml` to run on published GitHub Releases, rerun `go test ./...` and `go build .`, then build and push the Docker image to Docker Hub as both the release tag and `latest`.
+
+**Decisions:** Reused the same Go setup and validation commands as the CI workflow for consistency, used `docker/metadata-action` to derive exact tags from `github.event.release.tag_name`, and used the conventional `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` GitHub Actions secrets for Docker Hub authentication.
+
+**Deviations:** No functional deviations from the slice plan. Local QA also included a `docker build --platform linux/amd64` run to verify the existing Dockerfile still builds successfully before the GitHub-hosted publish path is exercised.
+
+**Files:** Added `.github/workflows/release.yml`; updated and moved this slice record to `.plans/github-actions-cicd/completed/02-add-release-publish-workflow.md`.
+
+**Notes for next slice:** Plan work is complete. Before the first release publish, set the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets in GitHub so the workflow can authenticate and push `jaiir320/bulkdownload`.
