@@ -34,4 +34,12 @@ Move route and middleware assembly into the `api` package by introducing a route
 
 ## Completion
 
-What was built. Key decisions made during implementation. Any deviations from the slice plan and why. Files created or modified. Anything the next slice should be aware of.
+**Built:** Added `api.NewRouter` so the API package now owns CORS middleware and the `/jobs`, `/status/{id}`, and `/download/{id}` route assembly; updated `main` and the end-to-end test harness to consume that router.
+
+**Decisions:** Kept router construction as a small exported helper in `api/router.go` so handler ownership and route wiring stay together without changing handler contracts or server setup responsibilities in `main`.
+
+**Deviations:** None.
+
+**Files:** `api/router.go`, `api/router_test.go`, `main.go`, `e2e_test.go`, `.plans/simplify-main-router-bootstrap/completed/01-api-owns-router-assembly.md`
+
+**Notes for next slice:** `main` still uses the extracted shutdown helpers (`newHTTPServer`, `serveUntilShutdown`, `newShutdownContext`); the next slice can focus on inlining the bootstrap and graceful-shutdown flow while keeping the new API-owned router entrypoint.

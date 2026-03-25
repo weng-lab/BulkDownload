@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jair/bulkdownload/api"
 	appconfig "github.com/jair/bulkdownload/internal/config"
@@ -46,12 +45,7 @@ func newTestApp(t *testing.T, config appconfig.Config) testApp {
 	stopCleanup := service.StartCleanup(jobStore, config.JobsDir, config.CleanupTick)
 	t.Cleanup(stopCleanup)
 
-	mux := chi.NewRouter()
-	mux.Post("/jobs", api.HandleCreateJob(manager, config))
-	mux.Get("/status/{id}", api.HandleStatus(jobStore))
-	mux.Get("/download/{id}", api.HandleDownload(jobStore, config))
-
-	server := httptest.NewServer(mux)
+	server := httptest.NewServer(api.NewRouter(manager, jobStore, config))
 	t.Cleanup(func() {
 		server.Close()
 	})

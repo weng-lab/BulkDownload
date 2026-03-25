@@ -12,8 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/cors"
 	"github.com/jair/bulkdownload/api"
 	appconfig "github.com/jair/bulkdownload/internal/config"
 	"github.com/jair/bulkdownload/internal/jobs"
@@ -28,17 +26,6 @@ const (
 )
 
 var shutdownSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
-
-func newRouter(manager *service.Manager, jobStore *jobs.Jobs, config appconfig.Config) http.Handler {
-	r := chi.NewRouter()
-	r.Use(cors.AllowAll().Handler)
-
-	r.Post("/jobs", api.HandleCreateJob(manager, config))
-	r.Get("/status/{id}", api.HandleStatus(jobStore))
-	r.Get("/download/{id}", api.HandleDownload(jobStore, config))
-
-	return r
-}
 
 func newHTTPServer(config appconfig.Config, handler http.Handler) *http.Server {
 	return &http.Server{
@@ -104,7 +91,7 @@ func run(ctx context.Context, config appconfig.Config) error {
 	jobStore := jobs.NewJobs()
 	manager := service.NewManager(jobStore, config)
 	stopCleanup := service.StartCleanup(jobStore, config.JobsDir, config.CleanupTick)
-	server := newHTTPServer(config, newRouter(manager, jobStore, config))
+	server := newHTTPServer(config, api.NewRouter(manager, jobStore, config))
 
 	log.Printf(
 		"config: jobs_dir=%s source_root_dir=%s public_base_url=%s download_root_dir=%s port=%s job_ttl=%s cleanup_tick=%s",
