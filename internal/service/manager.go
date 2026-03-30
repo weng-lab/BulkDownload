@@ -3,7 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/rand/v2"
 	"time"
 
@@ -102,9 +102,13 @@ func (m *Manager) DispatchZipJob(files []string) (jobs.Job, error) {
 	}
 
 	go func() {
+		logger := slog.Default().With("job_id", job.ID, "job_type", job.Type)
+		logger.Info("zip job started")
 		if err := m.executeZipJob(job.ID); err != nil {
-			log.Printf("dispatch: zip job %s failed: %v", job.ID, err)
+			logger.Error("zip job failed", "error", err)
+			return
 		}
+		logger.Info("zip job completed")
 	}()
 
 	return job, nil
@@ -117,9 +121,13 @@ func (m *Manager) DispatchTarballJob(files []string) (jobs.Job, error) {
 	}
 
 	go func() {
+		logger := slog.Default().With("job_id", job.ID, "job_type", job.Type)
+		logger.Info("tarball job started")
 		if err := m.executeTarballJob(job.ID); err != nil {
-			log.Printf("dispatch: tarball job %s failed: %v", job.ID, err)
+			logger.Error("tarball job failed", "error", err)
+			return
 		}
+		logger.Info("tarball job completed")
 	}()
 
 	return job, nil
@@ -132,9 +140,13 @@ func (m *Manager) DispatchScriptJob(files []string) (jobs.Job, error) {
 	}
 
 	go func() {
+		logger := slog.Default().With("job_id", job.ID, "job_type", job.Type)
+		logger.Info("script job started")
 		if err := m.executeScriptJob(job.ID); err != nil {
-			log.Printf("dispatch: script job %s failed: %v", job.ID, err)
+			logger.Error("script job failed", "error", err)
+			return
 		}
+		logger.Info("script job completed")
 	}()
 
 	return job, nil
