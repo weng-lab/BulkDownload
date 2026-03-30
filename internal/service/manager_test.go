@@ -482,6 +482,61 @@ func TestDispatchJobsWaitForSharedExecutionSlot(t *testing.T) {
 	}
 }
 
+func TestManagerShutdownStopsQueuedJobs(t *testing.T) {
+	t.Parallel()
+
+	config := testConfig(t)
+	config.SourceRootDir = t.TempDir()
+	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", config.JobsDir, err)
+	}
+	writeTestFile(t, filepath.Join(config.SourceRootDir, "reads", "sample.fastq"), "reads")
+
+	store := jobstore.NewJobs()
+	manager := newManager(store, config, nil)
+
+	for range maxConcurrentJobs {
+		manager.sem <- struct{}{}
+	}
+
+	dispatches := []func([]string) (jobstore.Job, error){
+		manager.DispatchZipJob,
+		manager.DispatchTarballJob,
+		manager.DispatchScriptJob,
+	}
+
+	jobsByOrder := make([]jobstore.Job, 0, len(dispatches))
+	for _, dispatch := range dispatches {
+		job, err := dispatch([]string{"reads/sample.fastq"})
+		if err != nil {
+			t.Fatalf("dispatch() error = %v", err)
+		}
+		jobsByOrder = append(jobsByOrder, job)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		manager.Shutdown()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for manager shutdown")
+	}
+
+	for _, job := range jobsByOrder {
+		stored, ok := store.Get(job.ID)
+		if !ok {
+			t.Fatalf("Get(%q) ok = false, want true", job.ID)
+		}
+		if diff := cmp.Diff(jobstore.StatusPending, stored.Status); diff != "" {
+			t.Errorf("job %s status mismatch (-want +got):\n%s", job.ID, diff)
+		}
+	}
+}
+
 func waitForAnyActiveJob(store *jobstore.Jobs, jobs []jobstore.Job, timeout time.Duration) (jobstore.Job, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {

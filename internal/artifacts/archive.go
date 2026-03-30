@@ -4,12 +4,13 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 )
 
-func CreateZipFromRoot(dest, sourceRoot string, files []string, onProgress func(int)) error {
+func CreateZipFromRoot(ctx context.Context, dest, sourceRoot string, files []string, onProgress func(int)) error {
 	total, err := totalFileSize(archiveSourcePaths(sourceRoot, files))
 	if err != nil {
 		return fmt.Errorf("calculate zip progress: %w", err)
@@ -21,12 +22,18 @@ func CreateZipFromRoot(dest, sourceRoot string, files []string, onProgress func(
 		return fmt.Errorf("create zip file: %w", err)
 	}
 	defer f.Close()
+	if err := checkContext(ctx); err != nil {
+		return err
+	}
 
 	zw := zip.NewWriter(f)
 	defer zw.Close()
 
 	for _, file := range files {
-		if err := addFileToZip(zw, archiveSourcePath(sourceRoot, file), file, reporter); err != nil {
+		if err := checkContext(ctx); err != nil {
+			return err
+		}
+		if err := addFileToZip(ctx, zw, archiveSourcePath(sourceRoot, file), file, reporter); err != nil {
 			return fmt.Errorf("add %s: %w", file, err)
 		}
 	}
@@ -34,7 +41,7 @@ func CreateZipFromRoot(dest, sourceRoot string, files []string, onProgress func(
 	return nil
 }
 
-func addFileToZip(zw *zip.Writer, sourcePath, archivePath string, reporter *progressReporter) error {
+func addFileToZip(ctx context.Context, zw *zip.Writer, sourcePath, archivePath string, reporter *progressReporter) error {
 	src, err := os.Open(sourcePath)
 	if err != nil {
 		return err
@@ -58,10 +65,10 @@ func addFileToZip(zw *zip.Writer, sourcePath, archivePath string, reporter *prog
 		return err
 	}
 
-	return copyWithProgress(w, src, reporter)
+	return copyWithProgressContext(ctx, w, src, reporter)
 }
 
-func CreateTarballFromRoot(dest, sourceRoot string, files []string, onProgress func(int)) error {
+func CreateTarballFromRoot(ctx context.Context, dest, sourceRoot string, files []string, onProgress func(int)) error {
 	total, err := totalFileSize(archiveSourcePaths(sourceRoot, files))
 	if err != nil {
 		return fmt.Errorf("calculate tarball progress: %w", err)
@@ -73,6 +80,9 @@ func CreateTarballFromRoot(dest, sourceRoot string, files []string, onProgress f
 		return fmt.Errorf("create tarball file: %w", err)
 	}
 	defer f.Close()
+	if err := checkContext(ctx); err != nil {
+		return err
+	}
 
 	gzw := gzip.NewWriter(f)
 	defer gzw.Close()
@@ -81,7 +91,10 @@ func CreateTarballFromRoot(dest, sourceRoot string, files []string, onProgress f
 	defer tw.Close()
 
 	for _, file := range files {
-		if err := addFileToTarball(tw, archiveSourcePath(sourceRoot, file), file, reporter); err != nil {
+		if err := checkContext(ctx); err != nil {
+			return err
+		}
+		if err := addFileToTarball(ctx, tw, archiveSourcePath(sourceRoot, file), file, reporter); err != nil {
 			return fmt.Errorf("add %s: %w", file, err)
 		}
 	}
@@ -89,7 +102,7 @@ func CreateTarballFromRoot(dest, sourceRoot string, files []string, onProgress f
 	return nil
 }
 
-func addFileToTarball(tw *tar.Writer, sourcePath, archivePath string, reporter *progressReporter) error {
+func addFileToTarball(ctx context.Context, tw *tar.Writer, sourcePath, archivePath string, reporter *progressReporter) error {
 	src, err := os.Open(sourcePath)
 	if err != nil {
 		return err
@@ -111,7 +124,7 @@ func addFileToTarball(tw *tar.Writer, sourcePath, archivePath string, reporter *
 		return err
 	}
 
-	return copyWithProgress(tw, src, reporter)
+	return copyWithProgressContext(ctx, tw, src, reporter)
 }
 
 func archiveSourcePaths(sourceRoot string, files []string) []string {

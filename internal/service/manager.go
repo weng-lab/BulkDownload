@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"sync"
 	"time"
 
 	appconfig "github.com/jair/bulkdownload/internal/config"
@@ -24,6 +26,9 @@ type Manager struct {
 	jobTTL          time.Duration
 	generateID      func() string
 	sem             chan struct{}
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
 }
 
 var jobIDWords = []string{
@@ -87,6 +92,8 @@ func newManager(jobStore *jobs.Jobs, config appconfig.Config, generateID func() 
 		generateID = randomJobID
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &Manager{
 		jobs:            jobStore,
 		jobsDir:         config.JobsDir,
@@ -96,6 +103,8 @@ func newManager(jobStore *jobs.Jobs, config appconfig.Config, generateID func() 
 		jobTTL:          config.JobTTL,
 		generateID:      generateID,
 		sem:             make(chan struct{}, maxConcurrentJobs),
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 }
 
@@ -133,24 +142,37 @@ func (m *Manager) DispatchScriptJob(files []string) (jobs.Job, error) {
 }
 
 func (m *Manager) dispatchJob(job jobs.Job) {
+	m.wg.Add(1)
 	go func() {
+		defer m.wg.Done()
+
 		logger := slog.Default().With("job_id", job.ID, "job_type", job.Type)
 
-		m.sem <- struct{}{}
-		defer func() {
-			<-m.sem
-		}()
+		select {
+		case m.sem <- struct{}{}:
+			defer func() {
+				<-m.sem
+			}()
+		case <-m.ctx.Done():
+			logger.Info("job cancelled before start")
+			return
+		}
+
+		if err := m.ctx.Err(); err != nil {
+			logger.Info("job cancelled before start")
+			return
+		}
 
 		logger.Info("job started")
 
 		var err error
 		switch job.Type {
 		case jobs.JobTypeZip:
-			err = m.executeZipJob(job.ID)
+			err = m.executeZipJob(m.ctx, job.ID)
 		case jobs.JobTypeTarball:
-			err = m.executeTarballJob(job.ID)
+			err = m.executeTarballJob(m.ctx, job.ID)
 		case jobs.JobTypeScript:
-			err = m.executeScriptJob(job.ID)
+			err = m.executeScriptJob(m.ctx, job.ID)
 		default:
 			err = fmt.Errorf("unsupported job type %q", job.Type)
 		}
@@ -161,6 +183,11 @@ func (m *Manager) dispatchJob(job jobs.Job) {
 
 		logger.Info("job completed")
 	}()
+}
+
+func (m *Manager) Shutdown() {
+	m.cancel()
+	m.wg.Wait()
 }
 
 func (m *Manager) createJob(jobType jobs.JobType, files []string) (jobs.Job, error) {
