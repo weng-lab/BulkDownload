@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -418,6 +419,95 @@ func TestDispatchJobMarksFailureWhenExecutionFails(t *testing.T) {
 			t.Fatalf("timed out waiting for job %s to fail", job.ID)
 		})
 	}
+}
+
+func TestDispatchJobsWaitForSharedExecutionSlot(t *testing.T) {
+	t.Parallel()
+
+	config := testConfig(t)
+	config.SourceRootDir = t.TempDir()
+	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", config.JobsDir, err)
+	}
+	writeTestFile(t, filepath.Join(config.SourceRootDir, "reads", "sample.fastq"), "reads")
+
+	store := jobstore.NewJobs()
+	manager := newManager(store, config, nil)
+
+	for range maxConcurrentJobs {
+		manager.sem <- struct{}{}
+	}
+
+	dispatches := []func([]string) (jobstore.Job, error){
+		manager.DispatchZipJob,
+		manager.DispatchScriptJob,
+		manager.DispatchTarballJob,
+		manager.DispatchZipJob,
+		manager.DispatchScriptJob,
+	}
+
+	jobsByOrder := make([]jobstore.Job, 0, len(dispatches))
+	for _, dispatch := range dispatches {
+		job, err := dispatch([]string{"reads/sample.fastq"})
+		if err != nil {
+			t.Fatalf("dispatch() error = %v", err)
+		}
+		jobsByOrder = append(jobsByOrder, job)
+	}
+
+	for _, job := range jobsByOrder {
+		stored, ok := store.Get(job.ID)
+		if !ok {
+			t.Fatalf("Get(%q) ok = false, want true", job.ID)
+		}
+		if diff := cmp.Diff(jobstore.StatusPending, stored.Status); diff != "" {
+			t.Errorf("job %s status mismatch (-want +got):\n%s", job.ID, diff)
+		}
+	}
+
+	<-manager.sem
+
+	if _, err := waitForAnyActiveJob(store, jobsByOrder, 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	for range maxConcurrentJobs - 1 {
+		<-manager.sem
+	}
+
+	for _, job := range jobsByOrder {
+		if _, err := waitForJobStatus(store, job.ID, 2*time.Second, jobstore.StatusDone); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func waitForAnyActiveJob(store *jobstore.Jobs, jobs []jobstore.Job, timeout time.Duration) (jobstore.Job, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		for _, job := range jobs {
+			stored, ok := store.Get(job.ID)
+			if ok && stored.Status != jobstore.StatusPending {
+				return stored, nil
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	return jobstore.Job{}, fmt.Errorf("timed out waiting for any job to leave pending")
+}
+
+func waitForJobStatus(store *jobstore.Jobs, jobID string, timeout time.Duration, want jobstore.JobStatus) (jobstore.Job, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		stored, ok := store.Get(jobID)
+		if ok && stored.Status == want {
+			return stored, nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	return jobstore.Job{}, fmt.Errorf("timed out waiting for job %s to reach status %q", jobID, want)
 }
 
 func TestDispatchZipJobReturnsErrorWhenJobCreationFails(t *testing.T) {
