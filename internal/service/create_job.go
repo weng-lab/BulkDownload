@@ -34,16 +34,7 @@ func (m *Manager) CreateJob(rawType string, requestedFiles []string) (jobs.Job, 
 		return jobs.Job{}, err
 	}
 
-	switch jobType {
-	case jobs.JobTypeZip:
-		return m.DispatchZipJob(files)
-	case jobs.JobTypeTarball:
-		return m.DispatchTarballJob(files)
-	case jobs.JobTypeScript:
-		return m.DispatchScriptJob(files)
-	default:
-		return jobs.Job{}, newCreateJobRequestError("invalid job type: %s", rawType)
-	}
+	return m.createAndDispatchJob(jobType, files)
 }
 
 func parseCreateJobType(raw string) (jobs.JobType, error) {

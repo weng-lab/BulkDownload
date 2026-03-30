@@ -108,32 +108,10 @@ func newManager(jobStore *jobs.Jobs, config appconfig.Config, generateID func() 
 	}
 }
 
-func (m *Manager) DispatchZipJob(files []string) (jobs.Job, error) {
-	job, err := m.createJob(jobs.JobTypeZip, files)
+func (m *Manager) createAndDispatchJob(jobType jobs.JobType, files []string) (jobs.Job, error) {
+	job, err := m.createJob(jobType, files)
 	if err != nil {
-		return jobs.Job{}, fmt.Errorf("create zip job: %w", err)
-	}
-
-	m.dispatchJob(job)
-
-	return job, nil
-}
-
-func (m *Manager) DispatchTarballJob(files []string) (jobs.Job, error) {
-	job, err := m.createJob(jobs.JobTypeTarball, files)
-	if err != nil {
-		return jobs.Job{}, fmt.Errorf("create tarball job: %w", err)
-	}
-
-	m.dispatchJob(job)
-
-	return job, nil
-}
-
-func (m *Manager) DispatchScriptJob(files []string) (jobs.Job, error) {
-	job, err := m.createJob(jobs.JobTypeScript, files)
-	if err != nil {
-		return jobs.Job{}, fmt.Errorf("create script job: %w", err)
+		return jobs.Job{}, fmt.Errorf("create %s job: %w", jobType, err)
 	}
 
 	m.dispatchJob(job)

@@ -12,7 +12,7 @@ import (
 	"github.com/jair/bulkdownload/internal/jobs"
 )
 
-func TestCreateJobRoutesSupportedRequestsThroughDispatchers(t *testing.T) {
+func TestCreateJobRoutesSupportedRequestsThroughCreateAndDispatch(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
