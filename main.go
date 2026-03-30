@@ -39,9 +39,6 @@ func main() {
 	jobStore := jobs.NewJobs()
 	manager := service.NewManager(jobStore, config)
 	stopCleanup := service.StartCleanup(jobStore, config.JobsDir, config.CleanupTick)
-	if stopCleanup != nil {
-		defer stopCleanup()
-	}
 
 	server := &http.Server{
 		Addr:              ":" + config.Port,
@@ -65,25 +62,18 @@ func main() {
 
 	serverErrCh := make(chan error, 1)
 	go func() {
-		err := server.ListenAndServe()
-		if errors.Is(err, http.ErrServerClosed) {
-			serverErrCh <- nil
-			return
-		}
-		serverErrCh <- err
+		serverErrCh <- server.ListenAndServe()
 	}()
 
 	select {
 	case err := <-serverErrCh:
-		if err != nil {
+		stopCleanup()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
 		return
 	case <-ctx.Done():
-		if stopCleanup != nil {
-			stopCleanup()
-			stopCleanup = nil
-		}
+		stopCleanup()
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), httpServerShutdownTimeout)
 		defer cancel()
@@ -92,7 +82,7 @@ func main() {
 			log.Fatalf("shutdown server: %v", err)
 		}
 
-		if err := <-serverErrCh; err != nil {
+		if err := <-serverErrCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
 	}
