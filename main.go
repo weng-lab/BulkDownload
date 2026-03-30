@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -35,6 +36,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "create logger: %v\n", err)
 		os.Exit(1)
 	}
+	slog.SetDefault(logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -50,7 +52,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              ":" + config.Port,
-		Handler:           api.NewRouter(manager, jobStore, config),
+		Handler:           api.NewRouter(logger, manager, jobStore, config),
 		ReadHeaderTimeout: httpServerReadHeaderTimeout,
 		ReadTimeout:       httpServerReadTimeout,
 		IdleTimeout:       httpServerIdleTimeout,

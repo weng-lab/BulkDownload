@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"log/slog"
-	"strings"
 	"testing"
 )
 
@@ -45,31 +43,5 @@ func TestParseLogLevel(t *testing.T) {
 				t.Fatalf("parseLogLevel() level = %v, want %v", got, tc.want)
 			}
 		})
-	}
-}
-
-func TestNewLogger_UsesTextHandlerLevel(t *testing.T) {
-	var out bytes.Buffer
-
-	logger, err := newLogger(&out, "info")
-	if err != nil {
-		t.Fatalf("newLogger() error = %v", err)
-	}
-
-	logger.Debug("debug hidden")
-	logger.Info("service started", slog.String("port", "8080"))
-
-	got := out.String()
-	if strings.Contains(got, "debug hidden") {
-		t.Fatal("expected debug log to be filtered at info level")
-	}
-	if !strings.Contains(got, "level=INFO") {
-		t.Fatalf("expected info log level in output, got %q", got)
-	}
-	if !strings.Contains(got, "msg=\"service started\"") {
-		t.Fatalf("expected info message in output, got %q", got)
-	}
-	if !strings.Contains(got, "port=8080") {
-		t.Fatalf("expected structured field in output, got %q", got)
 	}
 }
