@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,7 +111,7 @@ func TestCreateJobRoutesSupportedRequestsThroughCreateAndDispatch(t *testing.T) 
 	}
 }
 
-func TestCreateJobReturnsTypedValidationErrors(t *testing.T) {
+func TestCreateJobReturnsValidationErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -192,10 +193,10 @@ func TestCreateJobReturnsTypedValidationErrors(t *testing.T) {
 			if err == nil {
 				t.Fatal("CreateJob() error = nil, want non-nil")
 			}
-			if !IsCreateJobRequestError(err) {
-				t.Fatalf("CreateJob() error type = %T, want request error", err)
+			if !errors.Is(err, ErrCreateJobRequest) {
+				t.Fatalf("CreateJob() error = %v, want request sentinel", err)
 			}
-			if diff := cmp.Diff(tt.wantErr, err.Error()); diff != "" {
+			if diff := cmp.Diff(tt.wantErr, strings.TrimPrefix(err.Error(), ErrCreateJobRequest.Error()+": ")); diff != "" {
 				t.Errorf("CreateJob() error mismatch (-want +got):\n%s", diff)
 			}
 		})
