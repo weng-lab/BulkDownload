@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -16,6 +16,8 @@ import (
 
 func HandleCreateJob(manager *service.Manager, _ appconfig.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logger := requestLogger(r)
+
 		req, err := decodeCreateJobRequest(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -24,11 +26,17 @@ func HandleCreateJob(manager *service.Manager, _ appconfig.Config) http.HandlerF
 
 		job, err := manager.CreateJob(req.Type, req.Files)
 		if err != nil {
-			writeCreateJobError(w, req.Type, err)
+			writeCreateJobError(w, logger, req.Type, err)
 			return
 		}
 
-		log.Printf("create: %s job %s accepted with %d files, expires at %s", job.Type, job.ID, len(job.Files), job.ExpiresAt.Format(time.RFC3339))
+		logger.Info(
+			"create job accepted",
+			"job_id", job.ID,
+			"job_type", job.Type,
+			"file_count", len(job.Files),
+			"expires_at", job.ExpiresAt.Format(time.RFC3339),
+		)
 
 		writeAcceptedJobResponse(w, job)
 	}
@@ -36,6 +44,8 @@ func HandleCreateJob(manager *service.Manager, _ appconfig.Config) http.HandlerF
 
 func HandleStatus(jobStore *jobs.Jobs) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logger := requestLogger(r)
+
 		id := chi.URLParam(r, "id")
 		if id == "" {
 			http.Error(w, "missing job id", http.StatusBadRequest)
@@ -44,11 +54,11 @@ func HandleStatus(jobStore *jobs.Jobs) http.HandlerFunc {
 
 		job, ok := jobStore.Get(id)
 		if !ok {
-			log.Printf("status: job %s not found", id)
+			logger.Info("status job not found", "job_id", id)
 			http.Error(w, "job not found", http.StatusNotFound)
 			return
 		}
-		log.Printf("status: job %s is %s", id, job.Status)
+		logger.Info("status returned", "job_id", id, "job_type", job.Type, "job_status", job.Status)
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(newJobStatusResponse(job))
@@ -57,6 +67,8 @@ func HandleStatus(jobStore *jobs.Jobs) http.HandlerFunc {
 
 func HandleDownload(jobStore *jobs.Jobs, config appconfig.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logger := requestLogger(r)
+
 		id := chi.URLParam(r, "id")
 		if id == "" {
 			http.Error(w, "missing job id", http.StatusBadRequest)
@@ -65,18 +77,18 @@ func HandleDownload(jobStore *jobs.Jobs, config appconfig.Config) http.HandlerFu
 
 		job, ok := jobStore.Get(id)
 		if !ok {
-			log.Printf("download: job %s not found", id)
+			logger.Info("download job not found", "job_id", id)
 			http.Error(w, "job not found", http.StatusNotFound)
 			return
 		}
 		if job.Status != jobs.StatusDone {
-			log.Printf("download: job %s not ready, current status %s", id, job.Status)
+			logger.Info("download not ready", "job_id", id, "job_type", job.Type, "job_status", job.Status)
 			http.Error(w, "download is not ready yet", http.StatusConflict)
 			return
 		}
 
 		downloadPath := filepath.Join(config.JobsDir, job.Filename)
-		log.Printf("download: serving job %s from %s", id, downloadPath)
+		logger.Info("download served", "job_id", id, "job_type", job.Type, "filename", job.Filename)
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, job.Filename))
 		http.ServeFile(w, r, downloadPath)
 	}
@@ -91,13 +103,13 @@ func writeAcceptedJobResponse(w http.ResponseWriter, job jobs.Job) {
 	})
 }
 
-func writeCreateJobError(w http.ResponseWriter, requestedType string, err error) {
+func writeCreateJobError(w http.ResponseWriter, logger *slog.Logger, requestedType string, err error) {
 	if service.IsCreateJobRequestError(err) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("create: failed to dispatch %s job: %v", requestedType, err)
+	logger.Error("create job failed", "job_type", requestedType, "error", err)
 	http.Error(w, "failed to dispatch job", http.StatusInternalServerError)
 }
 
