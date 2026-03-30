@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,14 +27,23 @@ const (
 func main() {
 	config, err := appconfig.LoadConfig()
 	if err != nil {
-		log.Fatalf("load config: %v", err)
+		fmt.Fprintf(os.Stderr, "load config: %v\n", err)
+		os.Exit(1)
 	}
+
+	logger, err := newLogger(os.Stdout, config.LogLevel)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create logger: %v\n", err)
+		os.Exit(1)
+	}
+	slog.SetDefault(logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
-		log.Fatalf("create jobs dir: %v", err)
+		logger.Error("create jobs directory failed", "error", err, "jobs_dir", config.JobsDir)
+		os.Exit(1)
 	}
 
 	jobStore := jobs.NewJobs()
@@ -42,23 +52,24 @@ func main() {
 
 	server := &http.Server{
 		Addr:              ":" + config.Port,
-		Handler:           api.NewRouter(manager, jobStore, config),
+		Handler:           api.NewRouter(logger, manager, jobStore, config),
 		ReadHeaderTimeout: httpServerReadHeaderTimeout,
 		ReadTimeout:       httpServerReadTimeout,
 		IdleTimeout:       httpServerIdleTimeout,
 	}
 
-	log.Printf(
-		"config: jobs_dir=%s source_root_dir=%s public_base_url=%s download_root_dir=%s port=%s job_ttl=%s cleanup_tick=%s\n",
-		config.JobsDir,
-		config.SourceRootDir,
-		config.PublicBaseURL,
-		config.DownloadRootDir,
-		config.Port,
-		config.JobTTL,
-		config.CleanupTick,
+	logger.Info(
+		"service configuration loaded",
+		"jobs_dir", config.JobsDir,
+		"source_root_dir", config.SourceRootDir,
+		"public_base_url", config.PublicBaseURL,
+		"download_root_dir", config.DownloadRootDir,
+		"port", config.Port,
+		"log_level", config.LogLevel,
+		"job_ttl", config.JobTTL,
+		"cleanup_tick", config.CleanupTick,
 	)
-	log.Printf("bulk download service listening on :%s", config.Port)
+	logger.Info("service listening", "addr", ":"+config.Port)
 
 	serverErrCh := make(chan error, 1)
 	go func() {
@@ -69,21 +80,28 @@ func main() {
 	case err := <-serverErrCh:
 		stopCleanup()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal(err)
+			logger.Error("server exited unexpectedly", "error", err)
+			os.Exit(1)
 		}
+		logger.Info("server stopped")
 		return
 	case <-ctx.Done():
 		stopCleanup()
+		logger.Info("shutdown started")
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), httpServerShutdownTimeout)
 		defer cancel()
 
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Fatalf("shutdown server: %v", err)
+			logger.Error("shutdown server failed", "error", err)
+			os.Exit(1)
 		}
 
 		if err := <-serverErrCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal(err)
+			logger.Error("server stopped with error", "error", err)
+			os.Exit(1)
 		}
+
+		logger.Info("shutdown complete")
 	}
 }

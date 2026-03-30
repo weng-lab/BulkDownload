@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -253,7 +254,7 @@ func TestWriteCreateJobErrorMapsServiceFailures(t *testing.T) {
 			t.Parallel()
 
 			rec := httptest.NewRecorder()
-			writeCreateJobError(rec, tc.requestedType, tc.err)
+			writeCreateJobError(rec, slog.Default(), tc.requestedType, tc.err)
 
 			if rec.Code != tc.wantCode {
 				t.Fatalf("expected status %d, got %d", tc.wantCode, rec.Code)

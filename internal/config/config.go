@@ -22,6 +22,7 @@ const (
 	envPublicBaseURL   = "PUBLIC_BASE_URL"
 	envDownloadRootDir = "DOWNLOAD_ROOT_DIR"
 	envPort            = "PORT"
+	envLogLevel        = "LOG_LEVEL"
 	envJobTTL          = "JOB_TTL"
 	envCleanupTick     = "CLEANUP_TICK"
 )
@@ -32,6 +33,7 @@ type Config struct {
 	PublicBaseURL   string
 	DownloadRootDir string
 	Port            string
+	LogLevel        string
 	JobTTL          time.Duration
 	CleanupTick     time.Duration
 }
@@ -43,6 +45,7 @@ func defaultConfig() Config {
 		PublicBaseURL:   "https://download.mohd.org",
 		DownloadRootDir: "mohd_data",
 		Port:            "8080",
+		LogLevel:        "info",
 		JobTTL:          24 * time.Hour,
 		CleanupTick:     5 * time.Minute,
 	}
@@ -69,6 +72,7 @@ func resolveConfig(env map[string]string) (Config, error) {
 	config.PublicBaseURL = resolveString(env, envPublicBaseURL, config.PublicBaseURL)
 	config.DownloadRootDir = resolveString(env, envDownloadRootDir, config.DownloadRootDir)
 	config.Port = resolveString(env, envPort, config.Port)
+	config.LogLevel = resolveString(env, envLogLevel, config.LogLevel)
 
 	jobTTL, err := resolveDuration(env, config.JobTTL, envJobTTL)
 	if err != nil {

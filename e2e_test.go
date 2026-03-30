@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,7 +46,7 @@ func newTestApp(t *testing.T, config appconfig.Config) testApp {
 	stopCleanup := service.StartCleanup(jobStore, config.JobsDir, config.CleanupTick)
 	t.Cleanup(stopCleanup)
 
-	server := httptest.NewServer(api.NewRouter(manager, jobStore, config))
+	server := httptest.NewServer(api.NewRouter(slog.Default(), manager, jobStore, config))
 	t.Cleanup(func() {
 		server.Close()
 	})

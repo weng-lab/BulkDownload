@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -10,8 +11,9 @@ import (
 	"github.com/jair/bulkdownload/internal/service"
 )
 
-func NewRouter(manager *service.Manager, jobStore *jobs.Jobs, config appconfig.Config) http.Handler {
+func NewRouter(logger *slog.Logger, manager *service.Manager, jobStore *jobs.Jobs, config appconfig.Config) http.Handler {
 	r := chi.NewRouter()
+	r.Use(newRequestLoggerMiddleware(logger))
 	r.Use(cors.AllowAll().Handler)
 
 	r.Post("/jobs", HandleCreateJob(manager, config))
