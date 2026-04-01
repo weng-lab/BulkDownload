@@ -1,6 +1,7 @@
 package artifacts
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -75,7 +76,7 @@ type scriptTemplateFile struct {
 	LineSuffix string
 }
 
-func CreateDownloadScript(dest, baseURL, downloadRoot string, files []string) error {
+func CreateDownloadScript(ctx context.Context, dest, baseURL, downloadRoot string, files []string) error {
 	if len(files) == 0 {
 		return fmt.Errorf("no files provided")
 	}
@@ -85,6 +86,9 @@ func CreateDownloadScript(dest, baseURL, downloadRoot string, files []string) er
 		return fmt.Errorf("create script file: %w", err)
 	}
 	defer f.Close()
+	if err := checkContext(ctx); err != nil {
+		return err
+	}
 
 	templateFiles := make([]scriptTemplateFile, 0, len(files))
 	for i, file := range files {
@@ -109,9 +113,15 @@ func CreateDownloadScript(dest, baseURL, downloadRoot string, files []string) er
 	if err != nil {
 		return fmt.Errorf("parse script template: %w", err)
 	}
+	if err := checkContext(ctx); err != nil {
+		return err
+	}
 
 	if err := tmpl.Execute(f, data); err != nil {
 		return fmt.Errorf("write script file: %w", err)
+	}
+	if err := checkContext(ctx); err != nil {
+		return err
 	}
 
 	if err := f.Chmod(0o755); err != nil {

@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,7 +17,7 @@ import (
 	jobstore "github.com/jair/bulkdownload/internal/jobs"
 )
 
-type archiveCreator func(string, string, []string, func(int)) error
+type archiveCreator func(context.Context, string, string, []string, func(int)) error
 
 func TestCreateArchive(t *testing.T) {
 	t.Parallel()
@@ -99,7 +100,7 @@ func TestCreateArchive(t *testing.T) {
 			files := tt.makeFiles(t, root)
 
 			var progress []int
-			err := tt.create(dest, "", files, func(percent int) {
+			err := tt.create(context.Background(), dest, "", files, func(percent int) {
 				progress = append(progress, percent)
 			})
 			if tt.wantErr {
@@ -168,7 +169,7 @@ func TestCreateArchive_ReportsOneHundredBeforeReturn(t *testing.T) {
 			done := make(chan error, 1)
 
 			go func() {
-				done <- tt.create(dest, "", files, func(progress int) {
+				done <- tt.create(context.Background(), dest, "", files, func(progress int) {
 					if progress != 100 {
 						return
 					}
@@ -208,16 +209,18 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 	tests := []struct {
 		name          string
 		jobType       jobstore.JobType
-		executeJob    func(*Manager, string) error
+		executeJob    func(*Manager, context.Context, string) error
 		archiveSuffix string
 		makeFiles     func(*testing.T, string) []string
 		wantErr       bool
+		ctx           func() context.Context
 	}{
 		{
 			name:          "zip marks done after creating archive",
 			jobType:       jobstore.JobTypeZip,
 			executeJob:    (*Manager).executeZipJob,
 			archiveSuffix: ".zip",
+			ctx:           context.Background,
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{
@@ -231,6 +234,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 			jobType:       jobstore.JobTypeTarball,
 			executeJob:    (*Manager).executeTarballJob,
 			archiveSuffix: ".tar.gz",
+			ctx:           context.Background,
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{
@@ -244,6 +248,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 			jobType:       jobstore.JobTypeZip,
 			executeJob:    (*Manager).executeZipJob,
 			archiveSuffix: ".zip",
+			ctx:           context.Background,
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{filepath.Join(root, "missing-file.txt")}
@@ -255,6 +260,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 			jobType:       jobstore.JobTypeTarball,
 			executeJob:    (*Manager).executeTarballJob,
 			archiveSuffix: ".tar.gz",
+			ctx:           context.Background,
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{filepath.Join(root, "missing-file.txt")}
@@ -266,6 +272,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 			jobType:       jobstore.JobTypeZip,
 			executeJob:    (*Manager).executeZipJob,
 			archiveSuffix: ".zip",
+			ctx:           context.Background,
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{
@@ -279,6 +286,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 			jobType:       jobstore.JobTypeTarball,
 			executeJob:    (*Manager).executeTarballJob,
 			archiveSuffix: ".tar.gz",
+			ctx:           context.Background,
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
 				return []string{
@@ -308,7 +316,7 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 				t.Errorf("job type mismatch (-want +got):\n%s", diff)
 			}
 
-			err = tt.executeJob(fixture.manager, job.ID)
+			err = tt.executeJob(fixture.manager, tt.ctx(), job.ID)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("execute job error = nil, want non-nil")
@@ -359,6 +367,55 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 			if diff := cmp.Diff(wantContents, gotContents); diff != "" {
 				t.Errorf("archive contents mismatch (-want +got):\n%s", diff)
 			}
+		})
+	}
+}
+
+func TestManagerExecuteArchiveJobCancellationCleansPartialFile(t *testing.T) {
+	tests := []struct {
+		name          string
+		jobType       jobstore.JobType
+		executeJob    func(*Manager, context.Context, string) error
+		archiveSuffix string
+	}{
+		{
+			name:          "zip cleanup on cancellation",
+			jobType:       jobstore.JobTypeZip,
+			executeJob:    (*Manager).executeZipJob,
+			archiveSuffix: ".zip",
+		},
+		{
+			name:          "tarball cleanup on cancellation",
+			jobType:       jobstore.JobTypeTarball,
+			executeJob:    (*Manager).executeTarballJob,
+			archiveSuffix: ".tar.gz",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := newTestFixture(t)
+			if err := os.MkdirAll(fixture.config.JobsDir, 0o755); err != nil {
+				t.Fatalf("MkdirAll(%q) error = %v", fixture.config.JobsDir, err)
+			}
+
+			files := []string{writeRelativeTestFile(t, filepath.Join(testArchiveRoot(t), "alpha.txt"), "alpha contents")}
+			job, err := fixture.manager.createJob(tt.jobType, files)
+			if err != nil {
+				t.Fatalf("createJob(%v) error = %v", tt.jobType, err)
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			err = tt.executeJob(fixture.manager, ctx, job.ID)
+			if err == nil {
+				t.Fatal("execute job error = nil, want non-nil")
+			}
+
+			assertFailedArchiveJob(t, fixture.jobs, job.ID)
+			assertFileAbsent(t, filepath.Join(fixture.config.JobsDir, job.ID+tt.archiveSuffix))
 		})
 	}
 }

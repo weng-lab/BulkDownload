@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,7 +23,7 @@ func TestManagerExecuteScriptJob(t *testing.T) {
 		t.Fatalf("createJob(%q) error = %v", jobstore.JobTypeScript, err)
 	}
 
-	if err := fixture.manager.executeScriptJob(job.ID); err != nil {
+	if err := fixture.manager.executeScriptJob(context.Background(), job.ID); err != nil {
 		t.Fatalf("executeScriptJob() error = %v", err)
 	}
 
@@ -54,5 +55,43 @@ func TestManagerExecuteScriptJob(t *testing.T) {
 	}
 	if len(content) == 0 {
 		t.Fatalf("ReadFile(%q) returned empty script", scriptPath)
+	}
+}
+
+func TestManagerExecuteScriptJobCancellationCleansPartialFile(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTestFixture(t)
+	if err := os.MkdirAll(fixture.config.JobsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", fixture.config.JobsDir, err)
+	}
+
+	job, err := fixture.manager.createJob(jobstore.JobTypeScript, []string{"rna/accession.bigwig", "dna/sample.cram"})
+	if err != nil {
+		t.Fatalf("createJob(%q) error = %v", jobstore.JobTypeScript, err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = fixture.manager.executeScriptJob(ctx, job.ID)
+	if err == nil {
+		t.Fatal("executeScriptJob() error = nil, want non-nil")
+	}
+
+	got, ok := fixture.jobs.Get(job.ID)
+	if !ok {
+		t.Fatalf("Get(%q) ok = false, want true", job.ID)
+	}
+	if diff := cmp.Diff(jobstore.StatusFailed, got.Status); diff != "" {
+		t.Errorf("job status mismatch (-want +got):\n%s", diff)
+	}
+	if got.Filename != "" {
+		t.Fatalf("job filename = %q, want empty", got.Filename)
+	}
+
+	scriptPath := filepath.Join(fixture.config.JobsDir, job.ID+".sh")
+	if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
+		t.Fatalf("Stat(%q) error = %v, want not exist", scriptPath, err)
 	}
 }

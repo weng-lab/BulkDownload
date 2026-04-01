@@ -1,13 +1,15 @@
 package service
 
 import (
+	"context"
+	"fmt"
 	"path/filepath"
 
 	"github.com/jair/bulkdownload/internal/artifacts"
 	"github.com/jair/bulkdownload/internal/jobs"
 )
 
-func (m *Manager) executeScriptJob(jobID string) error {
+func (m *Manager) executeScriptJob(ctx context.Context, jobID string) error {
 	job, err := m.GetJobOfType(jobID, jobs.JobTypeScript)
 	if err != nil {
 		return err
@@ -19,10 +21,11 @@ func (m *Manager) executeScriptJob(jobID string) error {
 
 	filename := job.ID + ".sh"
 	outPath := filepath.Join(m.jobsDir, filename)
-	if err := artifacts.CreateDownloadScript(outPath, m.publicBaseURL, m.downloadRootDir, job.Files); err != nil {
+	if err := artifacts.CreateDownloadScript(ctx, outPath, m.publicBaseURL, m.downloadRootDir, job.Files); err != nil {
 		_ = artifacts.CleanupFile(outPath)
-		_ = m.jobs.MarkFailed(jobID, err)
-		return err
+		wrappedErr := fmt.Errorf("create download script: %w", err)
+		_ = m.jobs.MarkFailed(jobID, wrappedErr)
+		return wrappedErr
 	}
 	if err := m.jobs.MarkDone(jobID, filename); err != nil {
 		return err

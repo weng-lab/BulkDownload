@@ -10,18 +10,7 @@ import (
 	"github.com/jair/bulkdownload/internal/jobs"
 )
 
-type CreateJobRequestError struct {
-	message string
-}
-
-func (e *CreateJobRequestError) Error() string {
-	return e.message
-}
-
-func IsCreateJobRequestError(err error) bool {
-	var target *CreateJobRequestError
-	return errors.As(err, &target)
-}
+var ErrCreateJobRequest = errors.New("create job request")
 
 func (m *Manager) CreateJob(rawType string, requestedFiles []string) (jobs.Job, error) {
 	jobType, err := parseCreateJobType(rawType)
@@ -34,16 +23,14 @@ func (m *Manager) CreateJob(rawType string, requestedFiles []string) (jobs.Job, 
 		return jobs.Job{}, err
 	}
 
-	switch jobType {
-	case jobs.JobTypeZip:
-		return m.DispatchZipJob(files)
-	case jobs.JobTypeTarball:
-		return m.DispatchTarballJob(files)
-	case jobs.JobTypeScript:
-		return m.DispatchScriptJob(files)
-	default:
-		return jobs.Job{}, newCreateJobRequestError("invalid job type: %s", rawType)
+	job, err := m.createJob(jobType, files)
+	if err != nil {
+		return jobs.Job{}, fmt.Errorf("create %s job: %w", jobType, err)
 	}
+
+	m.dispatchJob(job)
+
+	return job, nil
 }
 
 func parseCreateJobType(raw string) (jobs.JobType, error) {
@@ -52,7 +39,7 @@ func parseCreateJobType(raw string) (jobs.JobType, error) {
 	case jobs.JobTypeZip, jobs.JobTypeTarball, jobs.JobTypeScript:
 		return jobType, nil
 	default:
-		return "", newCreateJobRequestError("invalid job type: %s", raw)
+		return "", fmt.Errorf("%w: invalid job type: %s", ErrCreateJobRequest, raw)
 	}
 }
 
@@ -61,24 +48,20 @@ func (m *Manager) resolveCreateJobFiles(files []string) ([]string, error) {
 	for _, rawPath := range files {
 		file := strings.TrimSpace(rawPath)
 		if file == "" {
-			return nil, newCreateJobRequestError("file path cannot be empty")
+			return nil, fmt.Errorf("%w: file path cannot be empty", ErrCreateJobRequest)
 		}
 
 		if filepath.IsAbs(file) {
-			return nil, newCreateJobRequestError("absolute paths are not allowed: %s", file)
+			return nil, fmt.Errorf("%w: absolute paths are not allowed: %s", ErrCreateJobRequest, file)
 		}
 
 		checkPath := filepath.Join(m.sourceRootDir, file)
 		if _, err := os.Stat(checkPath); err != nil {
-			return nil, newCreateJobRequestError("file not found: %s", file)
+			return nil, fmt.Errorf("%w: file not found: %s", ErrCreateJobRequest, file)
 		}
 
 		resolved = append(resolved, file)
 	}
 
 	return resolved, nil
-}
-
-func newCreateJobRequestError(format string, args ...any) error {
-	return &CreateJobRequestError{message: fmt.Sprintf(format, args...)}
 }

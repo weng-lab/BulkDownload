@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"sync"
 	"time"
 
 	appconfig "github.com/jair/bulkdownload/internal/config"
@@ -12,6 +14,8 @@ import (
 )
 
 const maxJobIDAttempts = 100
+
+const maxConcurrentJobs = 4
 
 type Manager struct {
 	jobs            *jobs.Jobs
@@ -21,6 +25,10 @@ type Manager struct {
 	downloadRootDir string
 	jobTTL          time.Duration
 	generateID      func() string
+	sem             chan struct{}
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
 }
 
 var jobIDWords = []string{
@@ -84,6 +92,8 @@ func newManager(jobStore *jobs.Jobs, config appconfig.Config, generateID func() 
 		generateID = randomJobID
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &Manager{
 		jobs:            jobStore,
 		jobsDir:         config.JobsDir,
@@ -92,64 +102,59 @@ func newManager(jobStore *jobs.Jobs, config appconfig.Config, generateID func() 
 		downloadRootDir: config.DownloadRootDir,
 		jobTTL:          config.JobTTL,
 		generateID:      generateID,
+		sem:             make(chan struct{}, maxConcurrentJobs),
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 }
 
-func (m *Manager) DispatchZipJob(files []string) (jobs.Job, error) {
-	job, err := m.createJob(jobs.JobTypeZip, files)
-	if err != nil {
-		return jobs.Job{}, fmt.Errorf("create zip job: %w", err)
-	}
-
+func (m *Manager) dispatchJob(job jobs.Job) {
+	m.wg.Add(1)
 	go func() {
+		defer m.wg.Done()
+
 		logger := slog.Default().With("job_id", job.ID, "job_type", job.Type)
-		logger.Info("zip job started")
-		if err := m.executeZipJob(job.ID); err != nil {
-			logger.Error("zip job failed", "error", err)
+
+		select {
+		case m.sem <- struct{}{}:
+			defer func() {
+				<-m.sem
+			}()
+		case <-m.ctx.Done():
+			logger.Info("job cancelled before start")
 			return
 		}
-		logger.Info("zip job completed")
-	}()
 
-	return job, nil
+		if err := m.ctx.Err(); err != nil {
+			logger.Info("job cancelled before start")
+			return
+		}
+
+		logger.Info("job started")
+
+		var err error
+		switch job.Type {
+		case jobs.JobTypeZip:
+			err = m.executeZipJob(m.ctx, job.ID)
+		case jobs.JobTypeTarball:
+			err = m.executeTarballJob(m.ctx, job.ID)
+		case jobs.JobTypeScript:
+			err = m.executeScriptJob(m.ctx, job.ID)
+		default:
+			err = fmt.Errorf("unsupported job type %q", job.Type)
+		}
+		if err != nil {
+			logger.Error("job failed", "error", err)
+			return
+		}
+
+		logger.Info("job completed")
+	}()
 }
 
-func (m *Manager) DispatchTarballJob(files []string) (jobs.Job, error) {
-	job, err := m.createJob(jobs.JobTypeTarball, files)
-	if err != nil {
-		return jobs.Job{}, fmt.Errorf("create tarball job: %w", err)
-	}
-
-	go func() {
-		logger := slog.Default().With("job_id", job.ID, "job_type", job.Type)
-		logger.Info("tarball job started")
-		if err := m.executeTarballJob(job.ID); err != nil {
-			logger.Error("tarball job failed", "error", err)
-			return
-		}
-		logger.Info("tarball job completed")
-	}()
-
-	return job, nil
-}
-
-func (m *Manager) DispatchScriptJob(files []string) (jobs.Job, error) {
-	job, err := m.createJob(jobs.JobTypeScript, files)
-	if err != nil {
-		return jobs.Job{}, fmt.Errorf("create script job: %w", err)
-	}
-
-	go func() {
-		logger := slog.Default().With("job_id", job.ID, "job_type", job.Type)
-		logger.Info("script job started")
-		if err := m.executeScriptJob(job.ID); err != nil {
-			logger.Error("script job failed", "error", err)
-			return
-		}
-		logger.Info("script job completed")
-	}()
-
-	return job, nil
+func (m *Manager) Shutdown() {
+	m.cancel()
+	m.wg.Wait()
 }
 
 func (m *Manager) createJob(jobType jobs.JobType, files []string) (jobs.Job, error) {
