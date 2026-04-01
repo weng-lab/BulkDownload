@@ -38,4 +38,25 @@ Keep this first pass minimal. The goal is to prove the import flow end-to-end wi
 
 ## Completion
 
-What was built. Key decisions made during implementation. Any deviations from the slice plan and why. Files created or modified. Anything the next slice should be aware of.
+Built a minimal manual importer command at `go run ./cmd/importmeta`.
+
+The importer currently creates `data/metadata.db`, creates a single `samples_atac` table, and imports deduplicated ATAC sample metadata from the checked-in `tsv/atac.tsv` file. It intentionally only supports ATAC in this first pass and keeps the TSV-to-table mapping hard-coded.
+
+Key decisions made during implementation:
+- Used a small `internal/metadata` package to hold the importer logic so the command stays thin and the code can be reused later.
+- Used SQLite via `modernc.org/sqlite` to avoid external system dependencies.
+- Dedupe is done by `sample_id`, and the importer fails if duplicate ATAC rows disagree on sample metadata.
+- Blank trailing TSV rows are ignored, but any non-blank row missing `sample_id` fails the import.
+
+Files created or modified:
+- `cmd/importmeta/main.go`
+- `internal/metadata/import.go`
+- `go.mod`
+- `go.sum`
+
+Verification run completed successfully against the checked-in ATAC TSV. The generated database contains a single `samples_atac` table with 33 imported sample rows, which matches the non-empty unique `sample_id` values in the source TSV.
+
+Anything the next slice should know:
+- The current output path is `data/metadata.db`.
+- Backup rotation is not implemented yet.
+- Only the ATAC sample schema exists so far.
