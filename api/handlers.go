@@ -2,10 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -104,8 +106,8 @@ func writeAcceptedJobResponse(w http.ResponseWriter, job jobs.Job) {
 }
 
 func writeCreateJobError(w http.ResponseWriter, logger *slog.Logger, requestedType string, err error) {
-	if service.IsCreateJobRequestError(err) {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if errors.Is(err, service.ErrCreateJobRequest) {
+		http.Error(w, strings.TrimPrefix(err.Error(), service.ErrCreateJobRequest.Error()+": "), http.StatusBadRequest)
 		return
 	}
 

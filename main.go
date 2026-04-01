@@ -79,6 +79,7 @@ func main() {
 	select {
 	case err := <-serverErrCh:
 		stopCleanup()
+		manager.Shutdown()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("server exited unexpectedly", "error", err)
 			os.Exit(1)
@@ -101,6 +102,8 @@ func main() {
 			logger.Error("server stopped with error", "error", err)
 			os.Exit(1)
 		}
+
+		manager.Shutdown()
 
 		logger.Info("shutdown complete")
 	}

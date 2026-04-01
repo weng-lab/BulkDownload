@@ -1,6 +1,7 @@
 package artifacts
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -66,7 +67,51 @@ func (w progressWriter) Write(p []byte) (int, error) {
 }
 
 func copyWithProgress(dst io.Writer, src io.Reader, reporter *progressReporter) error {
+	return copyWithProgressContext(context.Background(), dst, src, reporter)
+}
+
+func copyWithProgressContext(ctx context.Context, dst io.Writer, src io.Reader, reporter *progressReporter) error {
 	buf := make([]byte, copyBufferSize)
-	_, err := io.CopyBuffer(progressWriter{dst: dst, reporter: reporter}, src, buf)
-	return err
+	writer := progressWriter{dst: dst, reporter: reporter}
+
+	for {
+		if err := checkContext(ctx); err != nil {
+			return err
+		}
+
+		n, readErr := src.Read(buf)
+		if n > 0 {
+			if err := checkContext(ctx); err != nil {
+				return err
+			}
+
+			written, writeErr := writer.Write(buf[:n])
+			if writeErr != nil {
+				return writeErr
+			}
+			if written != n {
+				return io.ErrShortWrite
+			}
+		}
+
+		if readErr == io.EOF {
+			return nil
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+}
+
+func checkContext(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
 }

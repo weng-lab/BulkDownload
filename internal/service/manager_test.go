@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,11 +13,12 @@ import (
 	jobstore "github.com/jair/bulkdownload/internal/jobs"
 )
 
-func TestDispatchZipJob(t *testing.T) {
+func TestCreateJobDispatchesTypedJobs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name         string
+		rawType      string
 		seedExisting []string
 		generatedIDs []string
 		makeFiles    func(*testing.T, string) []string
@@ -25,6 +27,7 @@ func TestDispatchZipJob(t *testing.T) {
 	}{
 		{
 			name:         "creates and dispatches zip job",
+			rawType:      "zip",
 			generatedIDs: []string{"codon-bam"},
 			makeFiles: func(t *testing.T, root string) []string {
 				t.Helper()
@@ -40,6 +43,7 @@ func TestDispatchZipJob(t *testing.T) {
 		},
 		{
 			name:         "retries duplicate id",
+			rawType:      "zip",
 			seedExisting: []string{"allele-atac"},
 			generatedIDs: []string{"allele-atac", "codon-bam"},
 			makeFiles: func(t *testing.T, root string) []string {
@@ -84,15 +88,16 @@ func TestDispatchZipJob(t *testing.T) {
 				calls++
 				return id
 			})
+			t.Cleanup(manager.Shutdown)
 
 			files := tt.makeFiles(t, root)
-			job, err := manager.DispatchZipJob(files)
+			job, err := manager.CreateJob(tt.rawType, files)
 			if err != nil {
-				t.Fatalf("DispatchZipJob() error = %v", err)
+				t.Fatalf("CreateJob() error = %v", err)
 			}
 
 			if job.ID == "" {
-				t.Fatal("DispatchZipJob() returned empty job")
+				t.Fatal("CreateJob() returned empty job")
 			}
 
 			want := tt.wantJob
@@ -100,7 +105,7 @@ func TestDispatchZipJob(t *testing.T) {
 			want.ExpiresAt = job.ExpiresAt
 
 			if diff := cmp.Diff(want, job, cmpopts.EquateApproxTime(time.Second)); diff != "" {
-				t.Errorf("DispatchZipJob() mismatch (-want +got):\n%s", diff)
+				t.Errorf("CreateJob() mismatch (-want +got):\n%s", diff)
 			}
 
 			if diff := cmp.Diff(tt.wantCalls, calls); diff != "" {
@@ -124,7 +129,7 @@ func TestDispatchZipJob(t *testing.T) {
 	}
 }
 
-func TestDispatchTarballJob(t *testing.T) {
+func TestCreateJobTarball(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -142,10 +147,11 @@ func TestDispatchTarballJob(t *testing.T) {
 
 	jobs := jobstore.NewJobs()
 	manager := newManager(jobs, config, func() string { return "codon-bam" })
+	t.Cleanup(manager.Shutdown)
 
-	job, err := manager.DispatchTarballJob(files)
+	job, err := manager.CreateJob("tarball", files)
 	if err != nil {
-		t.Fatalf("DispatchTarballJob() error = %v", err)
+		t.Fatalf("CreateJob() error = %v", err)
 	}
 
 	if job.ID != "codon-bam" {
@@ -173,7 +179,7 @@ func TestDispatchTarballJob(t *testing.T) {
 	t.Fatalf("timed out waiting for job %s to complete", job.ID)
 }
 
-func TestDispatchScriptJob(t *testing.T) {
+func TestCreateJobScript(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -193,10 +199,11 @@ func TestDispatchScriptJob(t *testing.T) {
 
 	jobs := jobstore.NewJobs()
 	manager := newManager(jobs, config, func() string { return "codon-bam" })
+	t.Cleanup(manager.Shutdown)
 
-	job, err := manager.DispatchScriptJob(files)
+	job, err := manager.CreateJob("script", files)
 	if err != nil {
-		t.Fatalf("DispatchScriptJob() error = %v", err)
+		t.Fatalf("CreateJob() error = %v", err)
 	}
 
 	if job.ID != "codon-bam" {
@@ -224,24 +231,24 @@ func TestDispatchScriptJob(t *testing.T) {
 	t.Fatalf("timed out waiting for job %s to complete", job.ID)
 }
 
-func TestDispatchJobReturnsStoredSnapshot(t *testing.T) {
+func TestCreateJobReturnsStoredSnapshot(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		dispatch func(*Manager, []string) (jobstore.Job, error)
+		name    string
+		rawType string
 	}{
 		{
-			name:     "zip job",
-			dispatch: (*Manager).DispatchZipJob,
+			name:    "zip job",
+			rawType: "zip",
 		},
 		{
-			name:     "tarball job",
-			dispatch: (*Manager).DispatchTarballJob,
+			name:    "tarball job",
+			rawType: "tarball",
 		},
 		{
-			name:     "script job",
-			dispatch: (*Manager).DispatchScriptJob,
+			name:    "script job",
+			rawType: "script",
 		},
 	}
 
@@ -261,13 +268,14 @@ func TestDispatchJobReturnsStoredSnapshot(t *testing.T) {
 
 			jobs := jobstore.NewJobs()
 			manager := newManager(jobs, config, func() string { return "codon-bam" })
+			t.Cleanup(manager.Shutdown)
 
-			job, err := tt.dispatch(manager, files)
+			job, err := manager.CreateJob(tt.rawType, files)
 			if err != nil {
-				t.Fatalf("dispatch() error = %v", err)
+				t.Fatalf("CreateJob() error = %v", err)
 			}
 			if job.ID == "" {
-				t.Fatal("dispatch returned empty job")
+				t.Fatal("CreateJob returned empty job")
 			}
 
 			job.Files[0] = "changed.txt"
@@ -287,24 +295,24 @@ func TestDispatchJobCopiesRequestedFiles(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		jobType  jobstore.JobType
-		dispatch func(*Manager, []string) (jobstore.Job, error)
+		name    string
+		rawType string
+		jobType jobstore.JobType
 	}{
 		{
-			name:     "zip job",
-			jobType:  jobstore.JobTypeZip,
-			dispatch: (*Manager).DispatchZipJob,
+			name:    "zip job",
+			rawType: "zip",
+			jobType: jobstore.JobTypeZip,
 		},
 		{
-			name:     "tarball job",
-			jobType:  jobstore.JobTypeTarball,
-			dispatch: (*Manager).DispatchTarballJob,
+			name:    "tarball job",
+			rawType: "tarball",
+			jobType: jobstore.JobTypeTarball,
 		},
 		{
-			name:     "script job",
-			jobType:  jobstore.JobTypeScript,
-			dispatch: (*Manager).DispatchScriptJob,
+			name:    "script job",
+			rawType: "script",
+			jobType: jobstore.JobTypeScript,
 		},
 	}
 
@@ -323,10 +331,11 @@ func TestDispatchJobCopiesRequestedFiles(t *testing.T) {
 			files := []string{"reads/sample.fastq", "variants/sample.vcf"}
 
 			manager := newManager(jobstore.NewJobs(), config, func() string { return "codon-bam" })
+			t.Cleanup(manager.Shutdown)
 
-			job, err := tt.dispatch(manager, files)
+			job, err := manager.CreateJob(tt.rawType, files)
 			if err != nil {
-				t.Fatalf("dispatch(%q) error = %v", tt.jobType, err)
+				t.Fatalf("CreateJob(%q) error = %v", tt.rawType, err)
 			}
 			if job.ID == "" {
 				t.Fatal("dispatch returned empty job")
@@ -350,24 +359,24 @@ func TestDispatchJobMarksFailureWhenExecutionFails(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		jobType  jobstore.JobType
-		dispatch func(*Manager, []string) (jobstore.Job, error)
+		name    string
+		rawType string
+		jobType jobstore.JobType
 	}{
 		{
-			name:     "zip job",
-			jobType:  jobstore.JobTypeZip,
-			dispatch: (*Manager).DispatchZipJob,
+			name:    "zip job",
+			rawType: "zip",
+			jobType: jobstore.JobTypeZip,
 		},
 		{
-			name:     "tarball job",
-			jobType:  jobstore.JobTypeTarball,
-			dispatch: (*Manager).DispatchTarballJob,
+			name:    "tarball job",
+			rawType: "tarball",
+			jobType: jobstore.JobTypeTarball,
 		},
 		{
-			name:     "script job",
-			jobType:  jobstore.JobTypeScript,
-			dispatch: (*Manager).DispatchScriptJob,
+			name:    "script job",
+			rawType: "script",
+			jobType: jobstore.JobTypeScript,
 		},
 	}
 
@@ -391,10 +400,11 @@ func TestDispatchJobMarksFailureWhenExecutionFails(t *testing.T) {
 
 			jobs := jobstore.NewJobs()
 			manager := newManager(jobs, config, func() string { return "codon-bam" })
+			t.Cleanup(manager.Shutdown)
 
-			job, err := tt.dispatch(manager, []string{"alpha.txt"})
+			job, err := manager.CreateJob(tt.rawType, []string{"alpha.txt"})
 			if err != nil {
-				t.Fatalf("dispatch(%q) error = %v", tt.jobType, err)
+				t.Fatalf("CreateJob(%q) error = %v", tt.rawType, err)
 			}
 			if diff := cmp.Diff(jobstore.StatusPending, job.Status); diff != "" {
 				t.Errorf("job.Status mismatch (-want +got):\n%s", diff)
@@ -420,25 +430,173 @@ func TestDispatchJobMarksFailureWhenExecutionFails(t *testing.T) {
 	}
 }
 
-func TestDispatchZipJobReturnsErrorWhenJobCreationFails(t *testing.T) {
+func TestDispatchJobsWaitForSharedExecutionSlot(t *testing.T) {
 	t.Parallel()
 
 	config := testConfig(t)
+	config.SourceRootDir = t.TempDir()
+	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", config.JobsDir, err)
+	}
+	writeTestFile(t, filepath.Join(config.SourceRootDir, "reads", "sample.fastq"), "reads")
+
+	store := jobstore.NewJobs()
+	manager := newManager(store, config, nil)
+	t.Cleanup(manager.Shutdown)
+
+	for range maxConcurrentJobs {
+		manager.sem <- struct{}{}
+	}
+
+	rawTypes := []string{
+		"zip",
+		"script",
+		"tarball",
+		"zip",
+		"script",
+	}
+
+	jobsByOrder := make([]jobstore.Job, 0, len(rawTypes))
+	for _, rawType := range rawTypes {
+		job, err := manager.CreateJob(rawType, []string{"reads/sample.fastq"})
+		if err != nil {
+			t.Fatalf("CreateJob() error = %v", err)
+		}
+		jobsByOrder = append(jobsByOrder, job)
+	}
+
+	for _, job := range jobsByOrder {
+		stored, ok := store.Get(job.ID)
+		if !ok {
+			t.Fatalf("Get(%q) ok = false, want true", job.ID)
+		}
+		if diff := cmp.Diff(jobstore.StatusPending, stored.Status); diff != "" {
+			t.Errorf("job %s status mismatch (-want +got):\n%s", job.ID, diff)
+		}
+	}
+
+	<-manager.sem
+
+	if _, err := waitForAnyActiveJob(store, jobsByOrder, 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	for range maxConcurrentJobs - 1 {
+		<-manager.sem
+	}
+
+	for _, job := range jobsByOrder {
+		if _, err := waitForJobStatus(store, job.ID, 2*time.Second, jobstore.StatusDone); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestManagerShutdownStopsQueuedJobs(t *testing.T) {
+	t.Parallel()
+
+	config := testConfig(t)
+	config.SourceRootDir = t.TempDir()
+	if err := os.MkdirAll(config.JobsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", config.JobsDir, err)
+	}
+	writeTestFile(t, filepath.Join(config.SourceRootDir, "reads", "sample.fastq"), "reads")
+
+	store := jobstore.NewJobs()
+	manager := newManager(store, config, nil)
+
+	for range maxConcurrentJobs {
+		manager.sem <- struct{}{}
+	}
+
+	rawTypes := []string{
+		"zip",
+		"tarball",
+		"script",
+	}
+
+	jobsByOrder := make([]jobstore.Job, 0, len(rawTypes))
+	for _, rawType := range rawTypes {
+		job, err := manager.CreateJob(rawType, []string{"reads/sample.fastq"})
+		if err != nil {
+			t.Fatalf("CreateJob() error = %v", err)
+		}
+		jobsByOrder = append(jobsByOrder, job)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		manager.Shutdown()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for manager shutdown")
+	}
+
+	for _, job := range jobsByOrder {
+		stored, ok := store.Get(job.ID)
+		if !ok {
+			t.Fatalf("Get(%q) ok = false, want true", job.ID)
+		}
+		if diff := cmp.Diff(jobstore.StatusPending, stored.Status); diff != "" {
+			t.Errorf("job %s status mismatch (-want +got):\n%s", job.ID, diff)
+		}
+	}
+}
+
+func waitForAnyActiveJob(store *jobstore.Jobs, jobs []jobstore.Job, timeout time.Duration) (jobstore.Job, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		for _, job := range jobs {
+			stored, ok := store.Get(job.ID)
+			if ok && stored.Status != jobstore.StatusPending {
+				return stored, nil
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	return jobstore.Job{}, fmt.Errorf("timed out waiting for any job to leave pending")
+}
+
+func waitForJobStatus(store *jobstore.Jobs, jobID string, timeout time.Duration, want jobstore.JobStatus) (jobstore.Job, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		stored, ok := store.Get(jobID)
+		if ok && stored.Status == want {
+			return stored, nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	return jobstore.Job{}, fmt.Errorf("timed out waiting for job %s to reach status %q", jobID, want)
+}
+
+func TestCreateJobReturnsErrorWhenJobCreationFails(t *testing.T) {
+	t.Parallel()
+
+	config := testConfig(t)
+	config.SourceRootDir = t.TempDir()
+	writeTestFile(t, filepath.Join(config.SourceRootDir, "reads", "sample.fastq"), "reads")
 	jobs := jobstore.NewJobs()
 	if err := jobs.Add(jobstore.Job{ID: "allele-atac", Type: jobstore.JobTypeZip, ExpiresAt: time.Unix(100, 0)}); err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
 
 	manager := newManager(jobs, config, func() string { return "allele-atac" })
+	t.Cleanup(manager.Shutdown)
 
-	job, err := manager.DispatchZipJob([]string{"reads/sample.fastq"})
+	job, err := manager.CreateJob("zip", []string{"reads/sample.fastq"})
 	if err == nil {
-		t.Fatal("DispatchZipJob() error = nil, want non-nil")
+		t.Fatal("CreateJob() error = nil, want non-nil")
 	}
 	if diff := cmp.Diff(jobstore.Job{}, job); diff != "" {
-		t.Errorf("DispatchZipJob() job mismatch (-want +got):\n%s", diff)
+		t.Errorf("CreateJob() job mismatch (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff("create zip job: generate job id: exhausted retries", err.Error()); diff != "" {
-		t.Errorf("DispatchZipJob() error mismatch (-want +got):\n%s", diff)
+		t.Errorf("CreateJob() error mismatch (-want +got):\n%s", diff)
 	}
 }
