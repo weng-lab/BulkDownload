@@ -135,6 +135,7 @@ func HandleAdminGetJob(jobStore *jobs.Jobs) http.HandlerFunc {
 		}
 
 		job, ok := jobStore.Get(id)
+		// Expired jobs are treated as not found here because the cleanup sweep will remove them shortly.
 		if !ok || time.Now().After(job.ExpiresAt) {
 			logger.Info("admin job not found", "job_id", id)
 			http.Error(w, "job not found", http.StatusNotFound)

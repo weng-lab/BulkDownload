@@ -212,6 +212,7 @@ func (m *Manager) GetJobOfType(jobID string, jobType jobs.JobType) (*jobs.Job, e
 
 func (m *Manager) DeleteJob(jobID string) error {
 	job, ok := m.jobs.Get(jobID)
+	// Expired jobs are treated as not found here because the cleanup sweep will remove them shortly.
 	if !ok || time.Now().After(job.ExpiresAt) {
 		return jobs.ErrJobNotFound
 	}
