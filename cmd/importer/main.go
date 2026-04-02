@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	importer "github.com/jair/bulkdownload/internal/importer"
+	"github.com/jair/bulkdownload/internal/importer"
 )
 
 func main() {

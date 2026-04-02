@@ -1,4 +1,4 @@
-package metadata
+package importer
 
 import (
 	"database/sql"
