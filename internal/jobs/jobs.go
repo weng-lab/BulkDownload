@@ -31,14 +31,17 @@ const (
 )
 
 type Job struct {
-	ID        string
-	Type      JobType
-	Status    JobStatus
-	Progress  int
-	ExpiresAt time.Time
-	Files     []string
-	Error     string
-	Filename  string
+	ID         string
+	Type       JobType
+	Status     JobStatus
+	Progress   int
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	Files      []string
+	InputSize  int64
+	OutputSize int64
+	Error      string
+	Filename   string
 }
 
 type Jobs struct {
@@ -82,6 +85,20 @@ func (j *Jobs) Get(id string) (Job, bool) {
 	return result, true
 }
 
+func (j *Jobs) List() []Job {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+
+	out := make([]Job, 0, len(j.jobs))
+	for _, job := range j.jobs {
+		result := *job
+		result.Files = slices.Clone(job.Files)
+		out = append(out, result)
+	}
+
+	return out
+}
+
 func (j *Jobs) MarkProcessing(id string) error {
 	return j.update(id, func(job *Job) error {
 		job.Status = StatusProcessing
@@ -111,10 +128,11 @@ func (j *Jobs) MarkFailed(id string, err error) error {
 	})
 }
 
-func (j *Jobs) MarkDone(id, filename string) error {
+func (j *Jobs) MarkDone(id, filename string, outputSize int64) error {
 	return j.update(id, func(job *Job) error {
 		job.Status = StatusDone
 		job.Filename = filename
+		job.OutputSize = outputSize
 		job.Error = ""
 		return nil
 	})

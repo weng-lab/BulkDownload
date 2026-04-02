@@ -30,7 +30,12 @@ func (m *Manager) executeZipJob(ctx context.Context, jobID string) error {
 		return wrappedErr
 	}
 
-	if err := m.jobs.MarkDone(jobID, filename); err != nil {
+	outputSize, err := outputFileSize(outPath)
+	if err != nil {
+		return err
+	}
+
+	if err := m.jobs.MarkDone(jobID, filename, outputSize); err != nil {
 		return err
 	}
 
@@ -58,7 +63,12 @@ func (m *Manager) executeTarballJob(ctx context.Context, jobID string) error {
 		return wrappedErr
 	}
 
-	if err := m.jobs.MarkDone(jobID, filename); err != nil {
+	outputSize, err := outputFileSize(outPath)
+	if err != nil {
+		return err
+	}
+
+	if err := m.jobs.MarkDone(jobID, filename, outputSize); err != nil {
 		return err
 	}
 

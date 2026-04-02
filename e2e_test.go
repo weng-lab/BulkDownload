@@ -483,6 +483,160 @@ func TestCleanupRemovesExpiredJobAndArtifactForSupportedJobTypes(t *testing.T) {
 	}
 }
 
+func TestAdminEndpointsExposeStoredMetadataAndHideExpiredJobs(t *testing.T) {
+	t.Parallel()
+
+	config := testConfig(t)
+	config.JobTTL = 250 * time.Millisecond
+	config.CleanupTick = time.Second
+	app := newTestApp(t, config)
+	writeAppSourceFile(t, config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+	writeAppSourceFile(t, config.SourceRootDir, "nested/bravo.txt", "bravo contents")
+	writeAppSourceFile(t, config.SourceRootDir, "rna/accession.bigwig", "rna data")
+
+	zipCreated := createJob(t, app.server.URL+"/jobs", `{"type":"zip","files":["nested/alpha.txt","nested/bravo.txt"]}`)
+	scriptCreated := createJob(t, app.server.URL+"/jobs", `{"type":"script","files":["rna/accession.bigwig"]}`)
+	zipJob := waitForDoneStatus(t, app.server.URL, zipCreated.ID)
+	scriptJob := waitForDoneStatus(t, app.server.URL, scriptCreated.ID)
+
+	resp, err := http.Get(app.server.URL + "/admin/jobs")
+	if err != nil {
+		t.Fatalf("get admin jobs: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected admin jobs status %d, got %d: %s", http.StatusOK, resp.StatusCode, string(body))
+	}
+
+	var listed []api.AdminJobResponse
+	if err := json.NewDecoder(resp.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode admin list response: %v", err)
+	}
+	if len(listed) != 2 {
+		t.Fatalf("expected 2 admin jobs, got %d", len(listed))
+	}
+	if listed[0].ID != scriptCreated.ID || listed[1].ID != zipCreated.ID {
+		t.Fatalf("expected newest-first order, got %#v", listed)
+	}
+	assertAdminJobResponseShape(t, listed[0])
+	assertAdminJobResponseShape(t, listed[1])
+	if listed[0].InputSize <= 0 || listed[1].InputSize <= 0 {
+		t.Fatalf("expected positive input sizes, got %#v", listed)
+	}
+	if listed[0].OutputSize != int64(len(downloadBody(t, app.server.URL+"/download/"+scriptJob.ID))) {
+		t.Fatalf("script output size mismatch: %#v", listed[0])
+	}
+	if listed[1].OutputSize != int64(len(downloadBody(t, app.server.URL+"/download/"+zipJob.ID))) {
+		t.Fatalf("zip output size mismatch: %#v", listed[1])
+	}
+
+	detailResp, err := http.Get(app.server.URL + "/admin/jobs/" + zipCreated.ID)
+	if err != nil {
+		t.Fatalf("get admin job detail: %v", err)
+	}
+	defer detailResp.Body.Close()
+	if detailResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(detailResp.Body)
+		t.Fatalf("expected admin job detail status %d, got %d: %s", http.StatusOK, detailResp.StatusCode, string(body))
+	}
+	var detail api.AdminJobResponse
+	if err := json.NewDecoder(detailResp.Body).Decode(&detail); err != nil {
+		t.Fatalf("decode admin detail response: %v", err)
+	}
+	assertAdminJobResponseShape(t, detail)
+	if detail.ID != zipCreated.ID {
+		t.Fatalf("expected detail for %q, got %#v", zipCreated.ID, detail)
+	}
+
+	time.Sleep(config.JobTTL + 50*time.Millisecond)
+
+	expiredListResp, err := http.Get(app.server.URL + "/admin/jobs")
+	if err != nil {
+		t.Fatalf("get expired admin jobs: %v", err)
+	}
+	defer expiredListResp.Body.Close()
+	var expiredListed []api.AdminJobResponse
+	if err := json.NewDecoder(expiredListResp.Body).Decode(&expiredListed); err != nil {
+		t.Fatalf("decode expired admin list response: %v", err)
+	}
+	if len(expiredListed) != 0 {
+		t.Fatalf("expected expired jobs to be hidden, got %#v", expiredListed)
+	}
+
+	expiredDetailResp, err := http.Get(app.server.URL + "/admin/jobs/" + zipCreated.ID)
+	if err != nil {
+		t.Fatalf("get expired admin job detail: %v", err)
+	}
+	defer expiredDetailResp.Body.Close()
+	if expiredDetailResp.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(expiredDetailResp.Body)
+		t.Fatalf("expected expired admin job detail status %d, got %d: %s", http.StatusNotFound, expiredDetailResp.StatusCode, string(body))
+	}
+}
+
+func TestAdminDeleteRemovesCompletedJobAndArtifact(t *testing.T) {
+	t.Parallel()
+
+	config := testConfig(t)
+	config.JobTTL = 3 * time.Second
+	config.CleanupTick = time.Second
+	app := newTestApp(t, config)
+	writeAppSourceFile(t, config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+	writeAppSourceFile(t, config.SourceRootDir, "nested/bravo.txt", "bravo contents")
+
+	created := createJob(t, app.server.URL+"/jobs", `{"type":"zip","files":["nested/alpha.txt","nested/bravo.txt"]}`)
+	job := waitForDoneStatus(t, app.server.URL, created.ID)
+	artifactPath := filepath.Join(config.JobsDir, job.Filename)
+	if _, err := os.Stat(artifactPath); err != nil {
+		t.Fatalf("expected artifact to exist before delete: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, app.server.URL+"/admin/jobs/"+created.ID, nil)
+	if err != nil {
+		t.Fatalf("build delete request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete admin job: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected delete status %d, got %d: %s", http.StatusNoContent, resp.StatusCode, string(body))
+	}
+
+	detailResp, err := http.Get(app.server.URL + "/admin/jobs/" + created.ID)
+	if err != nil {
+		t.Fatalf("get deleted admin job detail: %v", err)
+	}
+	defer detailResp.Body.Close()
+	if detailResp.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(detailResp.Body)
+		t.Fatalf("expected deleted admin job detail status %d, got %d: %s", http.StatusNotFound, detailResp.StatusCode, string(body))
+	}
+
+	listResp, err := http.Get(app.server.URL + "/admin/jobs")
+	if err != nil {
+		t.Fatalf("get admin jobs after delete: %v", err)
+	}
+	defer listResp.Body.Close()
+	if listResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(listResp.Body)
+		t.Fatalf("expected admin jobs status %d, got %d: %s", http.StatusOK, listResp.StatusCode, string(body))
+	}
+	var listed []api.AdminJobResponse
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode admin list response after delete: %v", err)
+	}
+	if len(listed) != 0 {
+		t.Fatalf("expected deleted job to be absent from admin list, got %#v", listed)
+	}
+	if _, err := os.Stat(artifactPath); !os.IsNotExist(err) {
+		t.Fatalf("expected artifact to be removed, stat err = %v", err)
+	}
+}
+
 func createJob(t *testing.T, url, body string) api.JobResponse {
 	t.Helper()
 
@@ -540,4 +694,39 @@ func waitForDoneStatus(t *testing.T, baseURL, id string) api.JobStatusResponse {
 
 	t.Fatalf("timed out waiting for job %s to complete", id)
 	return api.JobStatusResponse{}
+}
+
+func downloadBody(t *testing.T, url string) []byte {
+	t.Helper()
+
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("download body request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected download status %d, got %d: %s", http.StatusOK, resp.StatusCode, string(body))
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read download body: %v", err)
+	}
+	return body
+}
+
+func assertAdminJobResponseShape(t *testing.T, resp api.AdminJobResponse) {
+	t.Helper()
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(raw) != 10 {
+		t.Fatalf("field count = %d, want 10; raw = %#v", len(raw), raw)
+	}
 }

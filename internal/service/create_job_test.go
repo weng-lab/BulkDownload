@@ -87,11 +87,19 @@ func TestCreateJobRoutesSupportedRequestsThroughCreateAndDispatch(t *testing.T) 
 				ID:        job.ID,
 				Type:      tt.wantType,
 				Status:    jobs.StatusPending,
+				CreatedAt: job.CreatedAt,
 				ExpiresAt: job.ExpiresAt,
 				Files:     tt.files,
+				InputSize: job.InputSize,
 			}
 			if diff := cmp.Diff(want, job, cmpopts.EquateApproxTime(time.Second)); diff != "" {
 				t.Errorf("CreateJob() mismatch (-want +got):\n%s", diff)
+			}
+			if job.CreatedAt.IsZero() {
+				t.Fatal("CreateJob() created at is zero")
+			}
+			if job.InputSize <= 0 {
+				t.Fatalf("CreateJob() input size = %d, want positive", job.InputSize)
 			}
 
 			stored := waitForStoredJob(t, fixture.jobs, job.ID)
@@ -104,8 +112,16 @@ func TestCreateJobRoutesSupportedRequestsThroughCreateAndDispatch(t *testing.T) 
 			if !strings.HasSuffix(stored.Filename, tt.wantNameSuffix) {
 				t.Fatalf("stored job filename = %q, want suffix %q", stored.Filename, tt.wantNameSuffix)
 			}
-			if _, err := os.Stat(filepath.Join(fixture.config.JobsDir, stored.Filename)); err != nil {
+			artifactPath := filepath.Join(fixture.config.JobsDir, stored.Filename)
+			info, err := os.Stat(artifactPath)
+			if err != nil {
 				t.Fatalf("Stat(%q) error = %v", filepath.Join(fixture.config.JobsDir, stored.Filename), err)
+			}
+			if diff := cmp.Diff(stored.InputSize, job.InputSize); diff != "" {
+				t.Errorf("stored job input size mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(info.Size(), stored.OutputSize); diff != "" {
+				t.Errorf("stored job output size mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

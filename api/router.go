@@ -19,6 +19,9 @@ func NewRouter(logger *slog.Logger, manager *service.Manager, jobStore *jobs.Job
 	r.Post("/jobs", HandleCreateJob(manager, config))
 	r.Get("/status/{id}", HandleStatus(jobStore))
 	r.Get("/download/{id}", HandleDownload(jobStore, config))
+	r.Get("/admin/jobs", HandleAdminListJobs(jobStore))
+	r.Get("/admin/jobs/{id}", HandleAdminGetJob(jobStore))
+	r.Delete("/admin/jobs/{id}", HandleAdminDeleteJob(manager))
 
 	return r
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -93,6 +94,85 @@ func HandleDownload(jobStore *jobs.Jobs, config appconfig.Config) http.HandlerFu
 		logger.Info("download served", "job_id", id, "job_type", job.Type, "filename", job.Filename)
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, job.Filename))
 		http.ServeFile(w, r, downloadPath)
+	}
+}
+
+func HandleAdminListJobs(jobStore *jobs.Jobs) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logger := requestLogger(r)
+		now := time.Now()
+		allJobs := jobStore.List()
+		visible := make([]jobs.Job, 0, len(allJobs))
+		for _, job := range allJobs {
+			if now.After(job.ExpiresAt) {
+				continue
+			}
+			visible = append(visible, job)
+		}
+		slices.SortFunc(visible, func(a, b jobs.Job) int {
+			return b.CreatedAt.Compare(a.CreatedAt)
+		})
+
+		resp := make([]AdminJobResponse, 0, len(visible))
+		for _, job := range visible {
+			resp = append(resp, newAdminJobResponse(job))
+		}
+
+		logger.Info("admin jobs listed", "job_count", len(resp))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+}
+
+func HandleAdminGetJob(jobStore *jobs.Jobs) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logger := requestLogger(r)
+
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			http.Error(w, "missing job id", http.StatusBadRequest)
+			return
+		}
+
+		job, ok := jobStore.Get(id)
+		// Expired jobs are treated as not found here because the cleanup sweep will remove them shortly.
+		if !ok || time.Now().After(job.ExpiresAt) {
+			logger.Info("admin job not found", "job_id", id)
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+
+		logger.Info("admin job returned", "job_id", id, "job_type", job.Type, "job_status", job.Status)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(newAdminJobResponse(job))
+	}
+}
+
+func HandleAdminDeleteJob(manager *service.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logger := requestLogger(r)
+
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			http.Error(w, "missing job id", http.StatusBadRequest)
+			return
+		}
+
+		err := manager.DeleteJob(id)
+		switch {
+		case err == nil:
+			logger.Info("admin job deleted", "job_id", id)
+			w.WriteHeader(http.StatusNoContent)
+		case errors.Is(err, jobs.ErrJobNotFound):
+			logger.Info("admin delete job not found", "job_id", id)
+			http.Error(w, "job not found", http.StatusNotFound)
+		case errors.Is(err, service.ErrDeleteJobRunning):
+			logger.Info("admin delete job still running", "job_id", id)
+			http.Error(w, err.Error(), http.StatusConflict)
+		default:
+			logger.Error("admin delete job failed", "job_id", id, "error", err)
+			http.Error(w, "failed to delete job", http.StatusInternalServerError)
+		}
 	}
 }
 

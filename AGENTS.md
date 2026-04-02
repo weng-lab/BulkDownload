@@ -1,9 +1,18 @@
-Prefer clear, explicit Go over DRY abstractions. Repeat yourself if it makes the code easier to read top-to-bottom. A little duplication is far cheaper than the wrong abstraction.
+Prefer explicit Go over abstraction.
 
-Do not define interfaces preemptively. Define interfaces at the consumer, not the producer. A concrete struct is the default.
+Inline code by default. Do not introduce tiny helpers unless they clearly remove repeated or hard-to-follow logic.
 
-Handle errors explicitly at each call site. Do not write generic error-handling wrappers or must()-style panic helpers. Wrap errors with fmt.Errorf("doing X: %w", err).
+Optimize for local readability. Code should make sense in one pass.
 
-Do not introduce goroutines or channels unless the task is genuinely concurrent. A synchronous for-loop is almost always the right first answer.
+Concrete structs first. Interfaces only at the consumer.
 
-Prefer stdlib (net/http, encoding/json, log/slog) over third-party packages unless there's a concrete reason.
+Handle errors explicitly at the call site.
+
+Use synchronous code unless concurrency is required.
+
+Prefer stdlib.
+
+Before editing, check:
+- Can I keep this inline?
+- Does the naming match nearby code?
+- Is this the smallest change that works?
