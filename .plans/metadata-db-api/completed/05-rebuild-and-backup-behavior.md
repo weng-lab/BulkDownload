@@ -36,4 +36,28 @@ Keep the workflow simple and explicit. This slice is about safe manual rebuilds,
 
 ## Completion
 
-What was built. Key decisions made during implementation. Any deviations from the slice plan and why. Files created or modified. Anything the next slice should be aware of.
+Updated the importer so rebuilds are now done safely through a temp file plus `.bak` rotation.
+
+What was built:
+- The importer now builds the new SQLite database at `output.tmp` first.
+- After a successful import, any existing `output.bak` is removed.
+- Any existing output database is renamed to `.bak`.
+- The freshly built temp database is then renamed into place as the new output.
+
+Key decisions made during implementation:
+- Kept the workflow manual and unchanged at `go run ./cmd/importer`.
+- Chose temp-file build plus final rename so the importer does not destroy the current output before the new database is ready.
+- Kept backup retention intentionally minimal: only a single `.bak` file is maintained.
+
+Files created or modified:
+- `internal/importer/import.go`
+
+Verification run completed successfully. Running `go run ./cmd/importer` twice produced:
+- `data/metadata.db`
+- `data/metadata.db.bak`
+
+Both databases were valid SQLite files and both contained the expected `files` rows after the second run.
+
+Anything the next slice should know:
+- The importer now has safe rebuild semantics for the output database.
+- The remaining optional slice is the small query/helper layer.

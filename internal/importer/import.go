@@ -32,42 +32,67 @@ func BuildDatabase(outPath string) error {
 		outPath = DefaultOutputPath
 	}
 
-	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+	outDir := filepath.Dir(outPath)
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 
-	if err := os.Remove(outPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove existing database: %w", err)
+	tempPath := outPath + ".tmp"
+	if err := os.Remove(tempPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove temp database: %w", err)
 	}
+	defer os.Remove(tempPath)
 
-	db, err := sql.Open("sqlite", outPath)
+	db, err := sql.Open("sqlite", tempPath)
 	if err != nil {
 		return fmt.Errorf("open sqlite database: %w", err)
 	}
-	defer db.Close()
 
 	if err := goose.SetDialect("sqlite3"); err != nil {
+		db.Close()
 		return fmt.Errorf("set goose dialect: %w", err)
 	}
 
 	if err := goose.Up(db, defaultMigrationsDir); err != nil {
+		db.Close()
 		return fmt.Errorf("apply goose migrations: %w", err)
 	}
 
 	if err := importRows(db, atacTSVPath, validateATACHeaders, parseATACRow, insertATACRow); err != nil {
+		db.Close()
 		return err
 	}
 
 	if err := importRows(db, rnaTSVPath, validateRNAHeaders, parseRNARow, insertRNARow); err != nil {
+		db.Close()
 		return err
 	}
 
 	if err := importRows(db, wgbsTSVPath, validateWGBSHeaders, parseWGBSRow, insertWGBSRow); err != nil {
+		db.Close()
 		return err
 	}
 
 	if err := importFiles(db, filesTSVPath); err != nil {
+		db.Close()
 		return err
+	}
+
+	if err := db.Close(); err != nil {
+		return fmt.Errorf("close sqlite database: %w", err)
+	}
+
+	backupPath := outPath + ".bak"
+	if err := os.Remove(backupPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove old backup database: %w", err)
+	}
+
+	if err := os.Rename(outPath, backupPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("move existing database to backup: %w", err)
+	}
+
+	if err := os.Rename(tempPath, outPath); err != nil {
+		return fmt.Errorf("move new database into place: %w", err)
 	}
 
 	return nil
