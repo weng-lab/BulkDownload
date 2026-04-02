@@ -42,4 +42,12 @@ Extend admin deletion to active work by adding targeted per-job cancellation in 
 
 ## Completion
 
-What was built. Key decisions made during implementation. Any deviations from the slice plan and why. Files created or modified. Anything the next slice should be aware of.
+**Built:** Added per-job cancellation and completion tracking in `service.Manager`, so `DELETE /admin/jobs/{id}` now cancels pending and processing jobs, waits for the specific job goroutine to stop, removes any derived artifact path, and then deletes the job from the store.
+
+**Decisions:** Kept the existing global manager shutdown context and layered per-job `context.WithCancel` state on top of it rather than refactoring execution flow more broadly; reused the delete path for active and non-active jobs by deriving the artifact filename from job type when a running job has not yet stored `Filename`; verified delete blocking behavior with manager-level tests that control the active run lifecycle directly.
+
+**Deviations:** Did not add a new HTTP handler code path because the existing delete handler already delegates to `Manager.DeleteJob`; once active-job deletion became safe at the manager layer, the endpoint behavior updated without extra transport changes.
+
+**Files:** Modified `internal/service/manager.go` and `internal/service/manager_test.go`.
+
+**Notes for next slice:** Active-job delete no longer returns `service.ErrDeleteJobRunning` in normal manager-driven flows, but the handler still maps that error if it ever surfaces from an unexpected edge case. Full-suite verification passed with `go test ./...`.

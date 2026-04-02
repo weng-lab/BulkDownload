@@ -31,9 +31,16 @@ type Manager struct {
 	jobTTL          time.Duration
 	generateID      func() string
 	sem             chan struct{}
+	jobRunsMu       sync.Mutex
+	jobRuns         map[string]*jobRun
 	ctx             context.Context
 	cancel          context.CancelFunc
 	wg              sync.WaitGroup
+}
+
+type jobRun struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 var jobIDWords = []string{
@@ -108,15 +115,32 @@ func newManager(jobStore *jobs.Jobs, config appconfig.Config, generateID func() 
 		jobTTL:          config.JobTTL,
 		generateID:      generateID,
 		sem:             make(chan struct{}, maxConcurrentJobs),
+		jobRuns:         make(map[string]*jobRun),
 		ctx:             ctx,
 		cancel:          cancel,
 	}
 }
 
 func (m *Manager) dispatchJob(job jobs.Job) {
+	ctx, cancel := context.WithCancel(m.ctx)
+	run := &jobRun{
+		cancel: cancel,
+		done:   make(chan struct{}),
+	}
+
+	m.jobRunsMu.Lock()
+	m.jobRuns[job.ID] = run
+	m.jobRunsMu.Unlock()
+
 	m.wg.Add(1)
 	go func() {
-		defer m.wg.Done()
+		defer func() {
+			m.wg.Done()
+			close(run.done)
+			m.jobRunsMu.Lock()
+			delete(m.jobRuns, job.ID)
+			m.jobRunsMu.Unlock()
+		}()
 
 		logger := slog.Default().With("job_id", job.ID, "job_type", job.Type)
 
@@ -125,12 +149,12 @@ func (m *Manager) dispatchJob(job jobs.Job) {
 			defer func() {
 				<-m.sem
 			}()
-		case <-m.ctx.Done():
+		case <-ctx.Done():
 			logger.Info("job cancelled before start")
 			return
 		}
 
-		if err := m.ctx.Err(); err != nil {
+		if err := ctx.Err(); err != nil {
 			logger.Info("job cancelled before start")
 			return
 		}
@@ -140,11 +164,11 @@ func (m *Manager) dispatchJob(job jobs.Job) {
 		var err error
 		switch job.Type {
 		case jobs.JobTypeZip:
-			err = m.executeZipJob(m.ctx, job.ID)
+			err = m.executeZipJob(ctx, job.ID)
 		case jobs.JobTypeTarball:
-			err = m.executeTarballJob(m.ctx, job.ID)
+			err = m.executeTarballJob(ctx, job.ID)
 		case jobs.JobTypeScript:
-			err = m.executeScriptJob(m.ctx, job.ID)
+			err = m.executeScriptJob(ctx, job.ID)
 		default:
 			err = fmt.Errorf("unsupported job type %q", job.Type)
 		}
@@ -219,18 +243,46 @@ func (m *Manager) DeleteJob(jobID string) error {
 
 	switch job.Status {
 	case jobs.StatusPending, jobs.StatusProcessing:
-		return ErrDeleteJobRunning
+		m.jobRunsMu.Lock()
+		run := m.jobRuns[jobID]
+		m.jobRunsMu.Unlock()
+		if run != nil {
+			run.cancel()
+			<-run.done
+		}
 	}
 
-	if job.Filename != "" {
-		path := filepath.Join(m.jobsDir, job.Filename)
+	job, ok = m.jobs.Get(jobID)
+	if !ok {
+		return nil
+	}
+
+	if filename := artifactFilename(job); filename != "" {
+		path := filepath.Join(m.jobsDir, filename)
 		if err := artifacts.CleanupFile(path); err != nil {
-			return fmt.Errorf("cleanup job artifact %q: %w", job.Filename, err)
+			return fmt.Errorf("cleanup job artifact %q: %w", filename, err)
 		}
 	}
 
 	m.jobs.Delete(jobID)
 	return nil
+}
+
+func artifactFilename(job jobs.Job) string {
+	if job.Filename != "" {
+		return job.Filename
+	}
+
+	switch job.Type {
+	case jobs.JobTypeZip:
+		return job.ID + ".zip"
+	case jobs.JobTypeTarball:
+		return job.ID + ".tar.gz"
+	case jobs.JobTypeScript:
+		return job.ID + ".sh"
+	default:
+		return ""
+	}
 }
 
 func randomJobID() string {
