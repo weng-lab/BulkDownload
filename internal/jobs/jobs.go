@@ -31,17 +31,17 @@ const (
 )
 
 type Job struct {
-	ID           string
-	Type         JobType
-	Status       JobStatus
-	Progress     int
-	CreationTime time.Time
-	ExpiresAt    time.Time
-	Files        []string
-	InputSize    int64
-	OutputSize   int64
-	Error        string
-	Filename     string
+	ID         string
+	Type       JobType
+	Status     JobStatus
+	Progress   int
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	Files      []string
+	InputSize  int64
+	OutputSize int64
+	Error      string
+	Filename   string
 }
 
 type Jobs struct {

@@ -159,15 +159,15 @@ func (m *Manager) Shutdown() {
 }
 
 func (m *Manager) createJob(jobType jobs.JobType, files []string, inputSize int64) (jobs.Job, error) {
-	creationTime := time.Now()
-	expiresAt := creationTime.Add(m.jobTTL)
+	createdAt := time.Now()
+	expiresAt := createdAt.Add(m.jobTTL)
 	job := jobs.Job{
-		Type:         jobType,
-		Status:       jobs.StatusPending,
-		CreationTime: creationTime,
-		ExpiresAt:    expiresAt,
-		Files:        append([]string(nil), files...),
-		InputSize:    inputSize,
+		Type:      jobType,
+		Status:    jobs.StatusPending,
+		CreatedAt: createdAt,
+		ExpiresAt: expiresAt,
+		Files:     append([]string(nil), files...),
+		InputSize: inputSize,
 	}
 
 	for range maxJobIDAttempts {

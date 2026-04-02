@@ -390,34 +390,34 @@ func TestHandleAdminListJobsReturnsVisibleJobsNewestFirst(t *testing.T) {
 	now := time.Now()
 	jobsToAdd := []jobs.Job{
 		{
-			ID:           "older",
-			Type:         jobs.JobTypeZip,
-			Status:       jobs.StatusDone,
-			Progress:     100,
-			Files:        []string{"nested/alpha.txt"},
-			InputSize:    12,
-			OutputSize:   34,
-			CreationTime: now.Add(-2 * time.Minute),
-			ExpiresAt:    now.Add(time.Minute),
+			ID:         "older",
+			Type:       jobs.JobTypeZip,
+			Status:     jobs.StatusDone,
+			Progress:   100,
+			Files:      []string{"nested/alpha.txt"},
+			InputSize:  12,
+			OutputSize: 34,
+			CreatedAt:  now.Add(-2 * time.Minute),
+			ExpiresAt:  now.Add(time.Minute),
 		},
 		{
-			ID:           "newer",
-			Type:         jobs.JobTypeScript,
-			Status:       jobs.StatusFailed,
-			Progress:     0,
-			Files:        []string{"rna/accession.bigwig"},
-			InputSize:    56,
-			OutputSize:   0,
-			CreationTime: now.Add(-time.Minute),
-			ExpiresAt:    now.Add(time.Minute),
-			Error:        "boom",
+			ID:         "newer",
+			Type:       jobs.JobTypeScript,
+			Status:     jobs.StatusFailed,
+			Progress:   0,
+			Files:      []string{"rna/accession.bigwig"},
+			InputSize:  56,
+			OutputSize: 0,
+			CreatedAt:  now.Add(-time.Minute),
+			ExpiresAt:  now.Add(time.Minute),
+			Error:      "boom",
 		},
 		{
-			ID:           "expired",
-			Type:         jobs.JobTypeTarball,
-			Status:       jobs.StatusDone,
-			CreationTime: now.Add(-3 * time.Minute),
-			ExpiresAt:    now.Add(-time.Second),
+			ID:        "expired",
+			Type:      jobs.JobTypeTarball,
+			Status:    jobs.StatusDone,
+			CreatedAt: now.Add(-3 * time.Minute),
+			ExpiresAt: now.Add(-time.Second),
 		},
 	}
 	for _, job := range jobsToAdd {
@@ -453,16 +453,16 @@ func TestHandleAdminGetJobReturnsStoredJob(t *testing.T) {
 	fixture := newHandlerFixture(t)
 	now := time.Now()
 	job := jobs.Job{
-		ID:           "job-123",
-		Type:         jobs.JobTypeZip,
-		Status:       jobs.StatusProcessing,
-		Progress:     37,
-		Files:        []string{"nested/alpha.txt", "nested/bravo.txt"},
-		InputSize:    123,
-		OutputSize:   0,
-		CreationTime: now.Add(-time.Minute),
-		ExpiresAt:    now.Add(time.Minute),
-		Error:        "",
+		ID:         "job-123",
+		Type:       jobs.JobTypeZip,
+		Status:     jobs.StatusProcessing,
+		Progress:   37,
+		Files:      []string{"nested/alpha.txt", "nested/bravo.txt"},
+		InputSize:  123,
+		OutputSize: 0,
+		CreatedAt:  now.Add(-time.Minute),
+		ExpiresAt:  now.Add(time.Minute),
+		Error:      "",
 	}
 	if err := fixture.jobs.Add(job); err != nil {
 		t.Fatalf("add job: %v", err)
@@ -494,10 +494,10 @@ func TestHandleAdminGetJobHidesExpiredAndMissingJobs(t *testing.T) {
 
 	fixture := newHandlerFixture(t)
 	expired := jobs.Job{
-		ID:           "expired",
-		Type:         jobs.JobTypeZip,
-		CreationTime: time.Now().Add(-time.Minute),
-		ExpiresAt:    time.Now().Add(-time.Second),
+		ID:        "expired",
+		Type:      jobs.JobTypeZip,
+		CreatedAt: time.Now().Add(-time.Minute),
+		ExpiresAt: time.Now().Add(-time.Second),
 	}
 	if err := fixture.jobs.Add(expired); err != nil {
 		t.Fatalf("add expired job: %v", err)

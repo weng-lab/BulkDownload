@@ -100,9 +100,17 @@ func HandleDownload(jobStore *jobs.Jobs, config appconfig.Config) http.HandlerFu
 func HandleAdminListJobs(jobStore *jobs.Jobs) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger := requestLogger(r)
-		visible := visibleJobs(jobStore.List(), time.Now())
+		now := time.Now()
+		allJobs := jobStore.List()
+		visible := make([]jobs.Job, 0, len(allJobs))
+		for _, job := range allJobs {
+			if now.After(job.ExpiresAt) {
+				continue
+			}
+			visible = append(visible, job)
+		}
 		slices.SortFunc(visible, func(a, b jobs.Job) int {
-			return b.CreationTime.Compare(a.CreationTime)
+			return b.CreatedAt.Compare(a.CreatedAt)
 		})
 
 		resp := make([]AdminJobResponse, 0, len(visible))
@@ -127,7 +135,7 @@ func HandleAdminGetJob(jobStore *jobs.Jobs) http.HandlerFunc {
 		}
 
 		job, ok := jobStore.Get(id)
-		if !ok || isExpiredJob(job, time.Now()) {
+		if !ok || time.Now().After(job.ExpiresAt) {
 			logger.Info("admin job not found", "job_id", id)
 			http.Error(w, "job not found", http.StatusNotFound)
 			return
@@ -171,20 +179,4 @@ func decodeCreateJobRequest(r *http.Request) (CreateJobRequest, error) {
 	}
 
 	return req, nil
-}
-
-func visibleJobs(all []jobs.Job, now time.Time) []jobs.Job {
-	visible := make([]jobs.Job, 0, len(all))
-	for _, job := range all {
-		if isExpiredJob(job, now) {
-			continue
-		}
-		visible = append(visible, job)
-	}
-
-	return visible
-}
-
-func isExpiredJob(job jobs.Job, now time.Time) bool {
-	return now.After(job.ExpiresAt)
 }

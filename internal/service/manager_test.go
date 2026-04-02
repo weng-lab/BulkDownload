@@ -102,15 +102,15 @@ func TestCreateJobDispatchesTypedJobs(t *testing.T) {
 
 			want := tt.wantJob
 			want.Files = files
-			want.CreationTime = job.CreationTime
+			want.CreatedAt = job.CreatedAt
 			want.ExpiresAt = job.ExpiresAt
 			want.InputSize = job.InputSize
 
 			if diff := cmp.Diff(want, job, cmpopts.EquateApproxTime(time.Second)); diff != "" {
 				t.Errorf("CreateJob() mismatch (-want +got):\n%s", diff)
 			}
-			if job.CreationTime.IsZero() {
-				t.Fatal("CreateJob() creation time is zero")
+			if job.CreatedAt.IsZero() {
+				t.Fatal("CreateJob() created at is zero")
 			}
 			if job.InputSize <= 0 {
 				t.Fatalf("CreateJob() input size = %d, want positive", job.InputSize)
@@ -171,8 +171,8 @@ func TestCreateJobTarball(t *testing.T) {
 	if job.Status != jobstore.StatusPending {
 		t.Errorf("job.Status = %q, want %q", job.Status, jobstore.StatusPending)
 	}
-	if job.CreationTime.IsZero() {
-		t.Fatal("job.CreationTime is zero")
+	if job.CreatedAt.IsZero() {
+		t.Fatal("job.CreatedAt is zero")
 	}
 	if job.InputSize <= 0 {
 		t.Fatalf("job.InputSize = %d, want positive", job.InputSize)
@@ -229,8 +229,8 @@ func TestCreateJobScript(t *testing.T) {
 	if job.Status != jobstore.StatusPending {
 		t.Errorf("job.Status = %q, want %q", job.Status, jobstore.StatusPending)
 	}
-	if job.CreationTime.IsZero() {
-		t.Fatal("job.CreationTime is zero")
+	if job.CreatedAt.IsZero() {
+		t.Fatal("job.CreatedAt is zero")
 	}
 	if job.InputSize <= 0 {
 		t.Fatalf("job.InputSize = %d, want positive", job.InputSize)

@@ -342,16 +342,16 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 				t.Fatalf("processed job filename = %q, want non-empty", got.Filename)
 			}
 			want := jobstore.Job{
-				ID:           job.ID,
-				Type:         tt.jobType,
-				Status:       jobstore.StatusDone,
-				Progress:     100,
-				CreationTime: job.CreationTime,
-				ExpiresAt:    job.ExpiresAt,
-				Files:        append([]string(nil), files...),
-				InputSize:    job.InputSize,
-				OutputSize:   got.OutputSize,
-				Filename:     got.Filename,
+				ID:         job.ID,
+				Type:       tt.jobType,
+				Status:     jobstore.StatusDone,
+				Progress:   100,
+				CreatedAt:  job.CreatedAt,
+				ExpiresAt:  job.ExpiresAt,
+				Files:      append([]string(nil), files...),
+				InputSize:  job.InputSize,
+				OutputSize: got.OutputSize,
+				Filename:   got.Filename,
 			}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("processed job mismatch (-want +got):\n%s", diff)

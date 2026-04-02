@@ -302,8 +302,8 @@ func TestJobs_ListReturnsSnapshots(t *testing.T) {
 	t.Parallel()
 
 	jobs := NewJobs()
-	first := Job{ID: "job-1", Type: JobTypeZip, Files: []string{"alpha.txt"}, CreationTime: time.Unix(10, 0)}
-	second := Job{ID: "job-2", Type: JobTypeScript, Files: []string{"beta.txt"}, CreationTime: time.Unix(20, 0)}
+	first := Job{ID: "job-1", Type: JobTypeZip, Files: []string{"alpha.txt"}, CreatedAt: time.Unix(10, 0)}
+	second := Job{ID: "job-2", Type: JobTypeScript, Files: []string{"beta.txt"}, CreatedAt: time.Unix(20, 0)}
 	if err := jobs.Add(first); err != nil {
 		t.Fatalf("Add(first) error = %v", err)
 	}

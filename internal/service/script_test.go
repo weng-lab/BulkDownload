@@ -37,15 +37,15 @@ func TestManagerExecuteScriptJob(t *testing.T) {
 	}
 
 	want := jobstore.Job{
-		ID:           job.ID,
-		Type:         jobstore.JobTypeScript,
-		Status:       jobstore.StatusDone,
-		CreationTime: job.CreationTime,
-		ExpiresAt:    job.ExpiresAt,
-		Files:        []string{"rna/accession.bigwig", "dna/sample.cram"},
-		InputSize:    16,
-		OutputSize:   got.OutputSize,
-		Filename:     got.Filename,
+		ID:         job.ID,
+		Type:       jobstore.JobTypeScript,
+		Status:     jobstore.StatusDone,
+		CreatedAt:  job.CreatedAt,
+		ExpiresAt:  job.ExpiresAt,
+		Files:      []string{"rna/accession.bigwig", "dna/sample.cram"},
+		InputSize:  16,
+		OutputSize: got.OutputSize,
+		Filename:   got.Filename,
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("processed script job mismatch (-want +got):\n%s", diff)

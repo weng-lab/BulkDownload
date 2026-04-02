@@ -84,19 +84,19 @@ func TestCreateJobRoutesSupportedRequestsThroughCreateAndDispatch(t *testing.T) 
 			}
 
 			want := jobs.Job{
-				ID:           job.ID,
-				Type:         tt.wantType,
-				Status:       jobs.StatusPending,
-				CreationTime: job.CreationTime,
-				ExpiresAt:    job.ExpiresAt,
-				Files:        tt.files,
-				InputSize:    job.InputSize,
+				ID:        job.ID,
+				Type:      tt.wantType,
+				Status:    jobs.StatusPending,
+				CreatedAt: job.CreatedAt,
+				ExpiresAt: job.ExpiresAt,
+				Files:     tt.files,
+				InputSize: job.InputSize,
 			}
 			if diff := cmp.Diff(want, job, cmpopts.EquateApproxTime(time.Second)); diff != "" {
 				t.Errorf("CreateJob() mismatch (-want +got):\n%s", diff)
 			}
-			if job.CreationTime.IsZero() {
-				t.Fatal("CreateJob() creation time is zero")
+			if job.CreatedAt.IsZero() {
+				t.Fatal("CreateJob() created at is zero")
 			}
 			if job.InputSize <= 0 {
 				t.Fatalf("CreateJob() input size = %d, want positive", job.InputSize)

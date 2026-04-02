@@ -27,16 +27,16 @@ type JobStatusResponse struct {
 }
 
 type AdminJobResponse struct {
-	ID           string         `json:"id"`
-	Type         jobs.JobType   `json:"type"`
-	Status       jobs.JobStatus `json:"status"`
-	Progress     int            `json:"progress"`
-	Files        []string       `json:"files"`
-	InputSize    int64          `json:"input_size"`
-	OutputSize   int64          `json:"output_size"`
-	CreationTime time.Time      `json:"creation_time"`
-	ExpiresAt    time.Time      `json:"expires_at"`
-	Error        string         `json:"error"`
+	ID         string         `json:"id"`
+	Type       jobs.JobType   `json:"type"`
+	Status     jobs.JobStatus `json:"status"`
+	Progress   int            `json:"progress"`
+	Files      []string       `json:"files"`
+	InputSize  int64          `json:"input_size"`
+	OutputSize int64          `json:"output_size"`
+	CreatedAt  time.Time      `json:"created_at"`
+	ExpiresAt  time.Time      `json:"expires_at"`
+	Error      string         `json:"error"`
 }
 
 func newJobStatusResponse(job jobs.Job) JobStatusResponse {
@@ -53,15 +53,15 @@ func newJobStatusResponse(job jobs.Job) JobStatusResponse {
 
 func newAdminJobResponse(job jobs.Job) AdminJobResponse {
 	return AdminJobResponse{
-		ID:           job.ID,
-		Type:         job.Type,
-		Status:       job.Status,
-		Progress:     job.Progress,
-		Files:        append([]string(nil), job.Files...),
-		InputSize:    job.InputSize,
-		OutputSize:   job.OutputSize,
-		CreationTime: job.CreationTime,
-		ExpiresAt:    job.ExpiresAt,
-		Error:        job.Error,
+		ID:         job.ID,
+		Type:       job.Type,
+		Status:     job.Status,
+		Progress:   job.Progress,
+		Files:      append([]string(nil), job.Files...),
+		InputSize:  job.InputSize,
+		OutputSize: job.OutputSize,
+		CreatedAt:  job.CreatedAt,
+		ExpiresAt:  job.ExpiresAt,
+		Error:      job.Error,
 	}
 }
