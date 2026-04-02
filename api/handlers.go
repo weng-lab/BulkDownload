@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -96,6 +97,48 @@ func HandleDownload(jobStore *jobs.Jobs, config appconfig.Config) http.HandlerFu
 	}
 }
 
+func HandleAdminListJobs(jobStore *jobs.Jobs) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logger := requestLogger(r)
+		visible := visibleJobs(jobStore.List(), time.Now())
+		slices.SortFunc(visible, func(a, b jobs.Job) int {
+			return b.CreationTime.Compare(a.CreationTime)
+		})
+
+		resp := make([]AdminJobResponse, 0, len(visible))
+		for _, job := range visible {
+			resp = append(resp, newAdminJobResponse(job))
+		}
+
+		logger.Info("admin jobs listed", "job_count", len(resp))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+}
+
+func HandleAdminGetJob(jobStore *jobs.Jobs) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logger := requestLogger(r)
+
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			http.Error(w, "missing job id", http.StatusBadRequest)
+			return
+		}
+
+		job, ok := jobStore.Get(id)
+		if !ok || isExpiredJob(job, time.Now()) {
+			logger.Info("admin job not found", "job_id", id)
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+
+		logger.Info("admin job returned", "job_id", id, "job_type", job.Type, "job_status", job.Status)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(newAdminJobResponse(job))
+	}
+}
+
 func writeAcceptedJobResponse(w http.ResponseWriter, job jobs.Job) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -128,4 +171,20 @@ func decodeCreateJobRequest(r *http.Request) (CreateJobRequest, error) {
 	}
 
 	return req, nil
+}
+
+func visibleJobs(all []jobs.Job, now time.Time) []jobs.Job {
+	visible := make([]jobs.Job, 0, len(all))
+	for _, job := range all {
+		if isExpiredJob(job, now) {
+			continue
+		}
+		visible = append(visible, job)
+	}
+
+	return visible
+}
+
+func isExpiredJob(job jobs.Job, now time.Time) bool {
+	return now.After(job.ExpiresAt)
 }

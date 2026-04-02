@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -232,7 +233,7 @@ func TestJobs_MarkDone(t *testing.T) {
 		t.Fatalf("MarkFailed() error = %v", err)
 	}
 
-	if err := jobs.MarkDone(job.ID, "job-1.zip"); err != nil {
+	if err := jobs.MarkDone(job.ID, "job-1.zip", 321); err != nil {
 		t.Fatalf("MarkDone() error = %v", err)
 	}
 
@@ -245,6 +246,7 @@ func TestJobs_MarkDone(t *testing.T) {
 	want.Status = StatusDone
 	want.Progress = 42
 	want.Filename = "job-1.zip"
+	want.OutputSize = 321
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("MarkDone() mismatch (-want +got):\n%s", diff)
 	}
@@ -278,7 +280,7 @@ func TestJobs_LifecycleMethodsReturnNotFound(t *testing.T) {
 		{
 			name: "MarkDone",
 			run: func(jobs *Jobs) error {
-				return jobs.MarkDone("missing", "job-1.zip")
+				return jobs.MarkDone("missing", "job-1.zip", 123)
 			},
 		},
 	}
@@ -293,6 +295,53 @@ func TestJobs_LifecycleMethodsReturnNotFound(t *testing.T) {
 				t.Fatalf("%s() error = %v, want %v", tt.name, err, ErrJobNotFound)
 			}
 		})
+	}
+}
+
+func TestJobs_ListReturnsSnapshots(t *testing.T) {
+	t.Parallel()
+
+	jobs := NewJobs()
+	first := Job{ID: "job-1", Type: JobTypeZip, Files: []string{"alpha.txt"}, CreationTime: time.Unix(10, 0)}
+	second := Job{ID: "job-2", Type: JobTypeScript, Files: []string{"beta.txt"}, CreationTime: time.Unix(20, 0)}
+	if err := jobs.Add(first); err != nil {
+		t.Fatalf("Add(first) error = %v", err)
+	}
+	if err := jobs.Add(second); err != nil {
+		t.Fatalf("Add(second) error = %v", err)
+	}
+
+	listed := jobs.List()
+	slices.SortFunc(listed, func(a, b Job) int {
+		if a.ID < b.ID {
+			return -1
+		}
+		if a.ID > b.ID {
+			return 1
+		}
+		return 0
+	})
+	want := []Job{first, second}
+	slices.SortFunc(want, func(a, b Job) int {
+		if a.ID < b.ID {
+			return -1
+		}
+		if a.ID > b.ID {
+			return 1
+		}
+		return 0
+	})
+	if diff := cmp.Diff(want, listed); diff != "" {
+		t.Fatalf("List() mismatch (-want +got):\n%s", diff)
+	}
+
+	listed[0].Files[0] = "changed.txt"
+	got, ok := jobs.Get("job-1")
+	if !ok {
+		t.Fatal("Get(job-1) ok = false, want true")
+	}
+	if diff := cmp.Diff([]string{"alpha.txt"}, got.Files); diff != "" {
+		t.Errorf("List() leaked internal state (-want +got):\n%s", diff)
 	}
 }
 

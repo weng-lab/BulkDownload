@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"os"
 	"sync"
 	"time"
 
@@ -157,13 +158,16 @@ func (m *Manager) Shutdown() {
 	m.wg.Wait()
 }
 
-func (m *Manager) createJob(jobType jobs.JobType, files []string) (jobs.Job, error) {
-	expiresAt := time.Now().Add(m.jobTTL)
+func (m *Manager) createJob(jobType jobs.JobType, files []string, inputSize int64) (jobs.Job, error) {
+	creationTime := time.Now()
+	expiresAt := creationTime.Add(m.jobTTL)
 	job := jobs.Job{
-		Type:      jobType,
-		Status:    jobs.StatusPending,
-		ExpiresAt: expiresAt,
-		Files:     append([]string(nil), files...),
+		Type:         jobType,
+		Status:       jobs.StatusPending,
+		CreationTime: creationTime,
+		ExpiresAt:    expiresAt,
+		Files:        append([]string(nil), files...),
+		InputSize:    inputSize,
 	}
 
 	for range maxJobIDAttempts {
@@ -180,6 +184,15 @@ func (m *Manager) createJob(jobType jobs.JobType, files []string) (jobs.Job, err
 	}
 
 	return jobs.Job{}, errors.New("generate job id: exhausted retries")
+}
+
+func outputFileSize(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, fmt.Errorf("stat output file %q: %w", path, err)
+	}
+
+	return info.Size(), nil
 }
 
 func (m *Manager) GetJobOfType(jobID string, jobType jobs.JobType) (*jobs.Job, error) {

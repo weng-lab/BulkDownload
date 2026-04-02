@@ -306,7 +306,11 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 			}
 
 			files := tt.makeFiles(t, testArchiveRoot(t))
-			job, err := fixture.manager.createJob(tt.jobType, files)
+			inputSize := int64(0)
+			if !tt.wantErr {
+				inputSize = totalFileSize(t, files)
+			}
+			job, err := fixture.manager.createJob(tt.jobType, files, inputSize)
 			if err != nil {
 				t.Fatalf("createJob(%v) error = %v", tt.jobType, err)
 			}
@@ -338,20 +342,27 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 				t.Fatalf("processed job filename = %q, want non-empty", got.Filename)
 			}
 			want := jobstore.Job{
-				ID:        job.ID,
-				Type:      tt.jobType,
-				Status:    jobstore.StatusDone,
-				Progress:  100,
-				ExpiresAt: job.ExpiresAt,
-				Files:     append([]string(nil), files...),
-				Filename:  got.Filename,
+				ID:           job.ID,
+				Type:         tt.jobType,
+				Status:       jobstore.StatusDone,
+				Progress:     100,
+				CreationTime: job.CreationTime,
+				ExpiresAt:    job.ExpiresAt,
+				Files:        append([]string(nil), files...),
+				InputSize:    job.InputSize,
+				OutputSize:   got.OutputSize,
+				Filename:     got.Filename,
 			}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("processed job mismatch (-want +got):\n%s", diff)
 			}
 			archivePath := filepath.Join(fixture.config.JobsDir, got.Filename)
-			if _, err := os.Stat(archivePath); err != nil {
+			info, err := os.Stat(archivePath)
+			if err != nil {
 				t.Fatalf("Stat(%q) error = %v", archivePath, err)
+			}
+			if diff := cmp.Diff(info.Size(), got.OutputSize); diff != "" {
+				t.Errorf("output size mismatch (-want +got):\n%s", diff)
 			}
 
 			wantContents := make(map[string]string, len(files))
@@ -401,7 +412,7 @@ func TestManagerExecuteArchiveJobCancellationCleansPartialFile(t *testing.T) {
 			}
 
 			files := []string{writeRelativeTestFile(t, filepath.Join(testArchiveRoot(t), "alpha.txt"), "alpha contents")}
-			job, err := fixture.manager.createJob(tt.jobType, files)
+			job, err := fixture.manager.createJob(tt.jobType, files, totalFileSize(t, files))
 			if err != nil {
 				t.Fatalf("createJob(%v) error = %v", tt.jobType, err)
 			}
@@ -561,6 +572,21 @@ func writeTestFile(t *testing.T, path, contents string) string {
 	}
 
 	return path
+}
+
+func totalFileSize(t *testing.T, paths []string) int64 {
+	t.Helper()
+
+	var total int64
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("Stat(%q) error = %v", path, err)
+		}
+		total += info.Size()
+	}
+
+	return total
 }
 
 func writeRelativeTestFile(t *testing.T, path, contents string) string {

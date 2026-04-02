@@ -18,7 +18,7 @@ func TestManagerExecuteScriptJob(t *testing.T) {
 		t.Fatalf("MkdirAll(%q) error = %v", fixture.config.JobsDir, err)
 	}
 
-	job, err := fixture.manager.createJob(jobstore.JobTypeScript, []string{"rna/accession.bigwig", "dna/sample.cram"})
+	job, err := fixture.manager.createJob(jobstore.JobTypeScript, []string{"rna/accession.bigwig", "dna/sample.cram"}, 16)
 	if err != nil {
 		t.Fatalf("createJob(%q) error = %v", jobstore.JobTypeScript, err)
 	}
@@ -37,12 +37,15 @@ func TestManagerExecuteScriptJob(t *testing.T) {
 	}
 
 	want := jobstore.Job{
-		ID:        job.ID,
-		Type:      jobstore.JobTypeScript,
-		Status:    jobstore.StatusDone,
-		ExpiresAt: job.ExpiresAt,
-		Files:     []string{"rna/accession.bigwig", "dna/sample.cram"},
-		Filename:  got.Filename,
+		ID:           job.ID,
+		Type:         jobstore.JobTypeScript,
+		Status:       jobstore.StatusDone,
+		CreationTime: job.CreationTime,
+		ExpiresAt:    job.ExpiresAt,
+		Files:        []string{"rna/accession.bigwig", "dna/sample.cram"},
+		InputSize:    16,
+		OutputSize:   got.OutputSize,
+		Filename:     got.Filename,
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("processed script job mismatch (-want +got):\n%s", diff)
@@ -56,6 +59,9 @@ func TestManagerExecuteScriptJob(t *testing.T) {
 	if len(content) == 0 {
 		t.Fatalf("ReadFile(%q) returned empty script", scriptPath)
 	}
+	if diff := cmp.Diff(int64(len(content)), got.OutputSize); diff != "" {
+		t.Errorf("output size mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestManagerExecuteScriptJobCancellationCleansPartialFile(t *testing.T) {
@@ -66,7 +72,7 @@ func TestManagerExecuteScriptJobCancellationCleansPartialFile(t *testing.T) {
 		t.Fatalf("MkdirAll(%q) error = %v", fixture.config.JobsDir, err)
 	}
 
-	job, err := fixture.manager.createJob(jobstore.JobTypeScript, []string{"rna/accession.bigwig", "dna/sample.cram"})
+	job, err := fixture.manager.createJob(jobstore.JobTypeScript, []string{"rna/accession.bigwig", "dna/sample.cram"}, 16)
 	if err != nil {
 		t.Fatalf("createJob(%q) error = %v", jobstore.JobTypeScript, err)
 	}
