@@ -8,7 +8,7 @@ The data is relatively stable. Updates happen manually when new TSVs arrive or w
 
 ## Solution
 
-Add a separate manual Go importer command that reads the checked-in TSV files, creates a fresh SQLite database, and loads the metadata into a small relational schema.
+Add a separate manual Go importer command at `go run ./cmd/importer` that reads the checked-in TSV files, creates a fresh SQLite database, applies `goose` migrations, and loads the metadata into the migrated schema.
 
 The database shape is:
 - one sample table per supported ome
@@ -17,18 +17,19 @@ The database shape is:
 The importer will:
 - read the current TSV files from `tsv/`
 - create a brand new SQLite database
-- create the supported ome-specific sample tables first
-- populate those sample tables from their assay TSVs
-- create and populate the global `files` table from the master files TSV
+- apply SQL migrations to create the schema
+- populate the supported ome-specific sample tables from their assay TSVs
+- populate the global `files` table from the master files TSV
 - fail fast on malformed source rows
 - move any existing target database to `.bak` before replacing it
 
-This keeps import logic separate from the service and produces a stable DB artifact the service can open later.
+This keeps schema management in SQL, keeps import logic in Go under `internal/importer/`, and produces a stable DB artifact the service can open later.
 
 ## Expected Behavior
 
 - I can run one Go command manually to build a fresh metadata database.
 - The importer reads the checked-in TSV files without requiring per-run input flags.
+- The importer applies `goose` migrations before loading data.
 - Each supported ome gets its own sample table with columns matching that TSV’s metadata fields.
 - The global `files` table contains file metadata keyed by `ome` and `sample_id`.
 - If the output DB already exists, it is moved to a `.bak` file before the new DB is put in place.
@@ -39,42 +40,40 @@ This keeps import logic separate from the service and produces a stable DB artif
 ## Implementation Decisions
 
 - Use SQLite as the metadata store.
+- Use `goose` SQL migrations for schema management.
 - Keep this work database-only. No metadata endpoints yet.
-- Use a separate manual Go command for import rather than tying import to service startup.
+- Use a separate manual Go command for import rather than tying import or migrations to service startup.
+- Keep `cmd/importer` as the entrypoint and keep the importer implementation under `internal/importer/`.
 - Default the importer to the checked-in `tsv/` directory.
 - Hard-code the current TSV-to-table mapping for now.
 - Use one sample table per ome instead of a single generic sample table.
 - Use one global `files` table with an `ome` column.
 - Join files to sample metadata by `sample_id`.
-- Build sample tables before building the `files` table.
+- Keep schema in SQL migrations and keep TSV parsing/loading in Go.
 - Skip file rows whose ome is not currently supported.
 - Always rebuild from scratch rather than incrementally updating rows.
 - On rebuild, rotate any existing output database to `.bak`.
 - Fail fast on invalid source rows such as malformed integer or boolean fields.
-- Keep a small helper/query layer for opening the DB, creating schema, importing rows, and validating/querying results.
+- Keep any helper/query layer small and separate from migration and import responsibilities.
+
+Implementation note:
+- Slice 1 and Slice 2 established the initial import path with schema created in Go.
+- Going forward, that path is being refined so schema creation moves into `goose` migrations before additional import work continues.
 
 ## Testing Approach
 
-Test the importer and database layer directly with temporary SQLite databases and small fixture TSV inputs.
-
-Key test coverage:
-- schema creation for supported ome-specific sample tables and the global `files` table
-- importing sample metadata from current assay TSV shapes
-- deduping sample rows down to one row per `sample_id` in each sample table
-- importing file rows from the master files TSV
-- parsing `size` as an integer
-- parsing `open_access` as a boolean
-- skipping unsupported ome file rows
-- failing on malformed source rows with clear errors
-- rotating an existing target DB to `.bak`
-- minimal helper queries returning expected sample rows and file rows after import
+Keep verification practical and manual for now.
 
 Good verification for the completed work is:
 - run the importer against the checked-in TSVs
+- confirm `goose` migrations apply successfully to a fresh SQLite database
+- inspect the created tables and columns
 - inspect row counts by table
 - query a known sample from at least two omes
-- query the matching files for that sample
+- later, query the matching files for that sample
 - confirm the imported values match the source TSVs
+
+Formal automated test coverage can be added later if the importer logic becomes complex enough to justify it.
 
 ## Out of Scope
 
@@ -84,4 +83,5 @@ Good verification for the completed work is:
 - automatic refresh or scheduled rebuilds
 - backup retention policy beyond a simple `.bak`
 - generalized dynamic discovery of new TSVs or omes
+- introducing a larger ORM or schema framework beyond `goose` + raw SQL
 - redesigning download job flows around metadata selection yet

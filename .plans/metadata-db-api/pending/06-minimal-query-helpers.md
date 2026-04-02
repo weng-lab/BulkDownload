@@ -1,18 +1,18 @@
-# Slice 5: Minimal Query Helpers
+# Slice 6: Minimal Query Helpers
 
 ## Dependencies
 
-- Slice 4: Rebuild And Backup Behavior
+- Slice 5: Rebuild And Backup Behavior
 
 ## Description
 
 Add a small helper layer for opening the DB and querying sample rows and file rows so the imported DB is easy to inspect and later reuse in the service.
 
-Keep this helper layer minimal. It should support straightforward inspection and future reuse, without designing a full metadata service API ahead of need.
+Keep this helper layer minimal. It should support straightforward inspection and future reuse, without designing a full metadata service API ahead of need. It should fit around the existing `internal/importer/` layout rather than pulling importer and query responsibilities back together.
 
 ## Expected Behaviors Addressed
 
-- Minimal helper/query code exists so we can verify imported data in tests and later reuse it in the service.
+- Minimal helper/query code exists so we can verify imported data manually and later reuse it in the service.
 
 ## Acceptance Criteria
 
@@ -23,7 +23,7 @@ Keep this helper layer minimal. It should support straightforward inspection and
 
 ## QA
 
-1. Build the database with the importer.
+1. Build the database with `go run ./cmd/importer`.
 2. Use the helper code to open the database.
 3. Fetch a known sample row for a supported ome.
 4. Fetch the associated file rows for that sample.

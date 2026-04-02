@@ -1,14 +1,14 @@
-# Slice 4: Rebuild And Backup Behavior
+# Slice 5: Rebuild And Backup Behavior
 
 ## Dependencies
 
-- Slice 3: Global Files Table
+- Slice 4: Files Migration And File Import
 
 ## Description
 
 Make the importer operationally usable by always building a fresh DB and moving any existing target DB to `.bak` before replacement.
 
-Keep the workflow simple and explicit. This slice is about safe manual rebuilds, not automation.
+Keep the workflow simple and explicit. This slice is about safe manual rebuilds, not automation. The importer should continue to run as a single command through `go run ./cmd/importer`.
 
 ## Expected Behaviors Addressed
 
@@ -24,7 +24,7 @@ Keep the workflow simple and explicit. This slice is about safe manual rebuilds,
 
 ## QA
 
-1. Run the importer once and confirm the database file is created.
+1. Run `go run ./cmd/importer` once and confirm the database file is created.
 2. Run it again against the same target path.
 3. Confirm the previous database file was moved to `.bak`.
 4. Confirm the new database file exists.

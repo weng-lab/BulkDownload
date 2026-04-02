@@ -38,7 +38,7 @@ Keep this first pass minimal. The goal is to prove the import flow end-to-end wi
 
 ## Completion
 
-Built a minimal manual importer command at `go run ./cmd/importmeta`.
+Built a minimal manual importer command at `go run ./cmd/importer`.
 
 The importer currently creates `data/metadata.db`, creates a single `samples_atac` table, and imports deduplicated ATAC sample metadata from the checked-in `tsv/atac.tsv` file. It intentionally only supports ATAC in this first pass and keeps the TSV-to-table mapping hard-coded.
 
@@ -49,7 +49,7 @@ Key decisions made during implementation:
 - Blank trailing TSV rows are ignored, but any non-blank row missing `sample_id` fails the import.
 
 Files created or modified:
-- `cmd/importmeta/main.go`
+- `cmd/importer/main.go`
 - `internal/metadata/import.go`
 - `go.mod`
 - `go.sum`
