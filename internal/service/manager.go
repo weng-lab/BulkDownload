@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/jair/bulkdownload/internal/artifacts"
 	appconfig "github.com/jair/bulkdownload/internal/config"
 	"github.com/jair/bulkdownload/internal/jobs"
 )
@@ -17,6 +19,8 @@ import (
 const maxJobIDAttempts = 100
 
 const maxConcurrentJobs = 4
+
+var ErrDeleteJobRunning = errors.New("job is still running")
 
 type Manager struct {
 	jobs            *jobs.Jobs
@@ -204,6 +208,28 @@ func (m *Manager) GetJobOfType(jobID string, jobType jobs.JobType) (*jobs.Job, e
 		return nil, fmt.Errorf("job %s has type %s, not %s", jobID, job.Type, jobType)
 	}
 	return &job, nil
+}
+
+func (m *Manager) DeleteJob(jobID string) error {
+	job, ok := m.jobs.Get(jobID)
+	if !ok || time.Now().After(job.ExpiresAt) {
+		return jobs.ErrJobNotFound
+	}
+
+	switch job.Status {
+	case jobs.StatusPending, jobs.StatusProcessing:
+		return ErrDeleteJobRunning
+	}
+
+	if job.Filename != "" {
+		path := filepath.Join(m.jobsDir, job.Filename)
+		if err := artifacts.CleanupFile(path); err != nil {
+			return fmt.Errorf("cleanup job artifact %q: %w", job.Filename, err)
+		}
+	}
+
+	m.jobs.Delete(jobID)
+	return nil
 }
 
 func randomJobID() string {

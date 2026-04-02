@@ -41,4 +41,12 @@ Add the first delete path for admin job management by supporting `DELETE /admin/
 
 ## Completion
 
-What was built. Key decisions made during implementation. Any deviations from the slice plan and why. Files created or modified. Anything the next slice should be aware of.
+**Built:** Added `DELETE /admin/jobs/{id}` for visible non-running jobs, with manager-level deletion that removes any stored artifact before deleting the job from the in-memory store; covered successful deletion, not-found handling, cleanup failures, and end-to-end completed-job removal.
+
+**Decisions:** Kept deletion coordinated in `service.Manager` so file cleanup and store removal stay atomic from the handler's perspective; returned `204 No Content` on success; treated pending and processing jobs as `409 Conflict` for now so the endpoint never claims success before slice 3 adds targeted cancellation.
+
+**Deviations:** Added explicit conflict handling for running jobs even though this slice only required completed and failed deletion, because exposing the endpoint without a safe running-job response would be misleading.
+
+**Files:** Modified `api/handlers.go`, `api/handlers_test.go`, `api/router.go`, `e2e_test.go`, `internal/service/manager.go`, and `internal/service/manager_test.go`.
+
+**Notes for next slice:** Running-job deletes currently return `409` via `service.ErrDeleteJobRunning`. Slice 3 can extend `Manager.DeleteJob` to cancel per-job work, wait for completion, and then reuse the same artifact cleanup and store-removal path.

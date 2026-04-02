@@ -575,6 +575,68 @@ func TestAdminEndpointsExposeStoredMetadataAndHideExpiredJobs(t *testing.T) {
 	}
 }
 
+func TestAdminDeleteRemovesCompletedJobAndArtifact(t *testing.T) {
+	t.Parallel()
+
+	config := testConfig(t)
+	config.JobTTL = 3 * time.Second
+	config.CleanupTick = time.Second
+	app := newTestApp(t, config)
+	writeAppSourceFile(t, config.SourceRootDir, "nested/alpha.txt", "alpha contents")
+	writeAppSourceFile(t, config.SourceRootDir, "nested/bravo.txt", "bravo contents")
+
+	created := createJob(t, app.server.URL+"/jobs", `{"type":"zip","files":["nested/alpha.txt","nested/bravo.txt"]}`)
+	job := waitForDoneStatus(t, app.server.URL, created.ID)
+	artifactPath := filepath.Join(config.JobsDir, job.Filename)
+	if _, err := os.Stat(artifactPath); err != nil {
+		t.Fatalf("expected artifact to exist before delete: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, app.server.URL+"/admin/jobs/"+created.ID, nil)
+	if err != nil {
+		t.Fatalf("build delete request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete admin job: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected delete status %d, got %d: %s", http.StatusNoContent, resp.StatusCode, string(body))
+	}
+
+	detailResp, err := http.Get(app.server.URL + "/admin/jobs/" + created.ID)
+	if err != nil {
+		t.Fatalf("get deleted admin job detail: %v", err)
+	}
+	defer detailResp.Body.Close()
+	if detailResp.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(detailResp.Body)
+		t.Fatalf("expected deleted admin job detail status %d, got %d: %s", http.StatusNotFound, detailResp.StatusCode, string(body))
+	}
+
+	listResp, err := http.Get(app.server.URL + "/admin/jobs")
+	if err != nil {
+		t.Fatalf("get admin jobs after delete: %v", err)
+	}
+	defer listResp.Body.Close()
+	if listResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(listResp.Body)
+		t.Fatalf("expected admin jobs status %d, got %d: %s", http.StatusOK, listResp.StatusCode, string(body))
+	}
+	var listed []api.AdminJobResponse
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode admin list response after delete: %v", err)
+	}
+	if len(listed) != 0 {
+		t.Fatalf("expected deleted job to be absent from admin list, got %#v", listed)
+	}
+	if _, err := os.Stat(artifactPath); !os.IsNotExist(err) {
+		t.Fatalf("expected artifact to be removed, stat err = %v", err)
+	}
+}
+
 func createJob(t *testing.T, url, body string) api.JobResponse {
 	t.Helper()
 

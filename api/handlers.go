@@ -147,6 +147,34 @@ func HandleAdminGetJob(jobStore *jobs.Jobs) http.HandlerFunc {
 	}
 }
 
+func HandleAdminDeleteJob(manager *service.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logger := requestLogger(r)
+
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			http.Error(w, "missing job id", http.StatusBadRequest)
+			return
+		}
+
+		err := manager.DeleteJob(id)
+		switch {
+		case err == nil:
+			logger.Info("admin job deleted", "job_id", id)
+			w.WriteHeader(http.StatusNoContent)
+		case errors.Is(err, jobs.ErrJobNotFound):
+			logger.Info("admin delete job not found", "job_id", id)
+			http.Error(w, "job not found", http.StatusNotFound)
+		case errors.Is(err, service.ErrDeleteJobRunning):
+			logger.Info("admin delete job still running", "job_id", id)
+			http.Error(w, err.Error(), http.StatusConflict)
+		default:
+			logger.Error("admin delete job failed", "job_id", id, "error", err)
+			http.Error(w, "failed to delete job", http.StatusInternalServerError)
+		}
+	}
+}
+
 func writeAcceptedJobResponse(w http.ResponseWriter, job jobs.Job) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)

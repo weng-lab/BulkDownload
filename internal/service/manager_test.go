@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -618,5 +619,116 @@ func TestCreateJobReturnsErrorWhenJobCreationFails(t *testing.T) {
 	}
 	if diff := cmp.Diff("create zip job: generate job id: exhausted retries", err.Error()); diff != "" {
 		t.Errorf("CreateJob() error mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestManagerDeleteJobRemovesCompletedArtifactAndStoreEntry(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTestFixture(t)
+	if err := os.MkdirAll(fixture.config.JobsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", fixture.config.JobsDir, err)
+	}
+
+	artifactPath := filepath.Join(fixture.config.JobsDir, "job-done.zip")
+	writeTestFile(t, artifactPath, "archive contents")
+	job := jobstore.Job{
+		ID:        "job-done",
+		Type:      jobstore.JobTypeZip,
+		Status:    jobstore.StatusDone,
+		Filename:  "job-done.zip",
+		CreatedAt: time.Now().Add(-time.Minute),
+		ExpiresAt: time.Now().Add(time.Minute),
+	}
+	if err := fixture.jobs.Add(job); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	if err := fixture.manager.DeleteJob(job.ID); err != nil {
+		t.Fatalf("DeleteJob() error = %v", err)
+	}
+	if _, ok := fixture.jobs.Get(job.ID); ok {
+		t.Fatalf("Get(%q) ok = true, want false", job.ID)
+	}
+	assertFileAbsent(t, artifactPath)
+}
+
+func TestManagerDeleteJobRemovesFailedJobWithoutArtifact(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTestFixture(t)
+	job := jobstore.Job{
+		ID:        "job-failed",
+		Type:      jobstore.JobTypeScript,
+		Status:    jobstore.StatusFailed,
+		Error:     "boom",
+		CreatedAt: time.Now().Add(-time.Minute),
+		ExpiresAt: time.Now().Add(time.Minute),
+	}
+	if err := fixture.jobs.Add(job); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	if err := fixture.manager.DeleteJob(job.ID); err != nil {
+		t.Fatalf("DeleteJob() error = %v", err)
+	}
+	if _, ok := fixture.jobs.Get(job.ID); ok {
+		t.Fatalf("Get(%q) ok = true, want false", job.ID)
+	}
+}
+
+func TestManagerDeleteJobReturnsNotFoundForMissingAndExpiredJobs(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTestFixture(t)
+	expired := jobstore.Job{
+		ID:        "expired",
+		Type:      jobstore.JobTypeTarball,
+		Status:    jobstore.StatusDone,
+		CreatedAt: time.Now().Add(-2 * time.Minute),
+		ExpiresAt: time.Now().Add(-time.Second),
+	}
+	if err := fixture.jobs.Add(expired); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	for _, id := range []string{"missing", expired.ID} {
+		if err := fixture.manager.DeleteJob(id); !errors.Is(err, jobstore.ErrJobNotFound) {
+			t.Fatalf("DeleteJob(%q) error = %v, want ErrJobNotFound", id, err)
+		}
+	}
+}
+
+func TestManagerDeleteJobReturnsErrorWhenArtifactCleanupFails(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTestFixture(t)
+	if err := os.MkdirAll(fixture.config.JobsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", fixture.config.JobsDir, err)
+	}
+
+	artifactDir := filepath.Join(fixture.config.JobsDir, "job-dir")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", artifactDir, err)
+	}
+	writeTestFile(t, filepath.Join(artifactDir, "nested.txt"), "still here")
+	job := jobstore.Job{
+		ID:        "job-done",
+		Type:      jobstore.JobTypeZip,
+		Status:    jobstore.StatusDone,
+		Filename:  "job-dir",
+		CreatedAt: time.Now().Add(-time.Minute),
+		ExpiresAt: time.Now().Add(time.Minute),
+	}
+	if err := fixture.jobs.Add(job); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	err := fixture.manager.DeleteJob(job.ID)
+	if err == nil {
+		t.Fatal("DeleteJob() error = nil, want non-nil")
+	}
+	if _, ok := fixture.jobs.Get(job.ID); !ok {
+		t.Fatalf("Get(%q) ok = false, want true", job.ID)
 	}
 }

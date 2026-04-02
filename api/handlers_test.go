@@ -514,6 +514,100 @@ func TestHandleAdminGetJobHidesExpiredAndMissingJobs(t *testing.T) {
 	}
 }
 
+func TestHandleAdminDeleteJobRemovesCompletedAndFailedJobs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		job      jobs.Job
+		artifact string
+	}{
+		{
+			name: "done job with artifact",
+			job: jobs.Job{
+				ID:        "job-done",
+				Type:      jobs.JobTypeZip,
+				Status:    jobs.StatusDone,
+				Filename:  "job-done.zip",
+				CreatedAt: time.Now().Add(-time.Minute),
+				ExpiresAt: time.Now().Add(time.Minute),
+			},
+			artifact: "archive contents",
+		},
+		{
+			name: "failed job without artifact",
+			job: jobs.Job{
+				ID:        "job-failed",
+				Type:      jobs.JobTypeScript,
+				Status:    jobs.StatusFailed,
+				Error:     "boom",
+				CreatedAt: time.Now().Add(-time.Minute),
+				ExpiresAt: time.Now().Add(time.Minute),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newHandlerFixture(t)
+			if err := fixture.jobs.Add(tt.job); err != nil {
+				t.Fatalf("add job: %v", err)
+			}
+			if tt.job.Filename != "" {
+				artifactPath := filepath.Join(fixture.config.JobsDir, tt.job.Filename)
+				if err := os.WriteFile(artifactPath, []byte(tt.artifact), 0o644); err != nil {
+					t.Fatalf("write artifact: %v", err)
+				}
+			}
+
+			rec := performRouteRequest(http.MethodDelete, "/admin/jobs/{id}", "/admin/jobs/"+tt.job.ID, HandleAdminDeleteJob(fixture.manager))
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+			}
+			if rec.Body.Len() != 0 {
+				t.Fatalf("expected empty body, got %q", rec.Body.String())
+			}
+			if _, ok := fixture.jobs.Get(tt.job.ID); ok {
+				t.Fatalf("job %q still present after delete", tt.job.ID)
+			}
+			if tt.job.Filename != "" {
+				if _, err := os.Stat(filepath.Join(fixture.config.JobsDir, tt.job.Filename)); !os.IsNotExist(err) {
+					t.Fatalf("expected artifact to be removed, stat err = %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleAdminDeleteJobReturnsNotFoundForMissingAndExpiredJobs(t *testing.T) {
+	t.Parallel()
+
+	fixture := newHandlerFixture(t)
+	expired := jobs.Job{
+		ID:        "expired",
+		Type:      jobs.JobTypeZip,
+		Status:    jobs.StatusDone,
+		CreatedAt: time.Now().Add(-time.Minute),
+		ExpiresAt: time.Now().Add(-time.Second),
+	}
+	if err := fixture.jobs.Add(expired); err != nil {
+		t.Fatalf("add expired job: %v", err)
+	}
+
+	for _, target := range []string{"/admin/jobs/missing", "/admin/jobs/expired"} {
+		rec := performRouteRequest(http.MethodDelete, "/admin/jobs/{id}", target, HandleAdminDeleteJob(fixture.manager))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("target %q expected status %d, got %d", target, http.StatusNotFound, rec.Code)
+		}
+		if rec.Body.String() != "job not found\n" {
+			t.Fatalf("target %q expected not found body, got %q", target, rec.Body.String())
+		}
+	}
+}
+
 func compareSortedFiles(want, got []string) string {
 	want = append([]string(nil), want...)
 	got = append([]string(nil), got...)
