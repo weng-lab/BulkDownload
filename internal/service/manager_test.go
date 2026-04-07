@@ -62,7 +62,6 @@ func TestCreateJobDispatchesTypedJobs(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -274,7 +273,6 @@ func TestCreateJobReturnsStoredSnapshot(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -338,7 +336,6 @@ func TestDispatchJobCopiesRequestedFiles(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -402,7 +399,6 @@ func TestDispatchJobMarksFailureWhenExecutionFails(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -760,7 +756,6 @@ func TestManagerDeleteJobCancelsActiveJobsWaitsForCompletionAndCleansArtifacts(t
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

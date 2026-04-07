@@ -29,6 +29,7 @@ func TestResolveConfig(t *testing.T) {
 				"DOWNLOAD_ROOT_DIR": "custom-data",
 				"PORT":              "9090",
 				"LOG_LEVEL":         "debug",
+				"ADMIN_TOKEN":       "secret-token",
 				"JOB_TTL":           "30s",
 				"CLEANUP_TICK":      "5s",
 			},
@@ -39,6 +40,7 @@ func TestResolveConfig(t *testing.T) {
 				DownloadRootDir: "custom-data",
 				Port:            "9090",
 				LogLevel:        "debug",
+				AdminToken:      "secret-token",
 				JobTTL:          30 * time.Second,
 				CleanupTick:     5 * time.Second,
 			},
@@ -52,6 +54,7 @@ func TestResolveConfig(t *testing.T) {
 				"DOWNLOAD_ROOT_DIR": " ",
 				"PORT":              "",
 				"LOG_LEVEL":         " ",
+				"ADMIN_TOKEN":       " ",
 				"JOB_TTL":           "  ",
 				"CLEANUP_TICK":      "",
 			},
@@ -63,6 +66,7 @@ func TestResolveConfig(t *testing.T) {
 				"PUBLIC_BASE_URL": " https://example.com/data ",
 				"PORT":            " 9090 ",
 				"LOG_LEVEL":       " debug ",
+				"ADMIN_TOKEN":     " secret-token ",
 			},
 			want: Config{
 				JobsDir:         "./jobs",
@@ -71,6 +75,7 @@ func TestResolveConfig(t *testing.T) {
 				DownloadRootDir: "mohd_data",
 				Port:            "9090",
 				LogLevel:        "debug",
+				AdminToken:      "secret-token",
 				JobTTL:          24 * time.Hour,
 				CleanupTick:     5 * time.Minute,
 			},
@@ -95,7 +100,6 @@ func TestResolveConfig(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := resolveConfig(tt.env)
 			if err != nil {
@@ -143,7 +147,6 @@ func TestResolveConfig_InvalidDuration(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := resolveConfig(tt.env)
 			if err == nil {
@@ -171,6 +174,7 @@ PUBLIC_BASE_URL="http://localhost:9000"
 DOWNLOAD_ROOT_DIR='downloads'
 PORT=9090
 LOG_LEVEL=debug
+ADMIN_TOKEN=dev-secret
 JOB_TTL=5m
 CLEANUP_TICK=30s
 `
@@ -190,6 +194,7 @@ CLEANUP_TICK=30s
 		DownloadRootDir: "downloads",
 		Port:            "9090",
 		LogLevel:        "debug",
+		AdminToken:      "dev-secret",
 		JobTTL:          5 * time.Minute,
 		CleanupTick:     30 * time.Second,
 	}
@@ -217,11 +222,12 @@ func TestLoadConfig_EnvOverridesDotEnv(t *testing.T) {
 	dir := t.TempDir()
 	withWorkingDir(t, dir)
 
-	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("PORT=9090\nLOG_LEVEL=debug\nJOB_TTL=5m\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("PORT=9090\nLOG_LEVEL=debug\nADMIN_TOKEN=dotenv-secret\nJOB_TTL=5m\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(.env) error = %v", err)
 	}
 	t.Setenv("PORT", "8081")
 	t.Setenv("LOG_LEVEL", "warn")
+	t.Setenv("ADMIN_TOKEN", "env-secret")
 	t.Setenv("JOB_TTL", "45s")
 
 	got, err := LoadConfig()
@@ -234,6 +240,9 @@ func TestLoadConfig_EnvOverridesDotEnv(t *testing.T) {
 	}
 	if diff := cmp.Diff("warn", got.LogLevel); diff != "" {
 		t.Errorf("LoadConfig() log level mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff("env-secret", got.AdminToken); diff != "" {
+		t.Errorf("LoadConfig() admin token mismatch (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff(45*time.Second, got.JobTTL); diff != "" {
 		t.Errorf("LoadConfig() job ttl mismatch (-want +got):\n%s", diff)
@@ -250,6 +259,7 @@ func clearConfigEnv(t *testing.T) {
 		"DOWNLOAD_ROOT_DIR",
 		"PORT",
 		"LOG_LEVEL",
+		"ADMIN_TOKEN",
 		"JOB_TTL",
 		"CLEANUP_TICK",
 	} {

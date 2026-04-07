@@ -91,7 +91,6 @@ func TestCreateArchive(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -155,7 +154,6 @@ func TestCreateArchive_ReportsOneHundredBeforeReturn(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			root := testArchiveRoot(t)
 			dest := filepath.Join(root, tt.destName)
@@ -298,7 +296,6 @@ func TestManagerExecuteArchiveJob(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			fixture := newTestFixture(t)
 			if err := os.MkdirAll(fixture.config.JobsDir, 0o755); err != nil {
@@ -404,7 +401,6 @@ func TestManagerExecuteArchiveJobCancellationCleansPartialFile(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			fixture := newTestFixture(t)
 			if err := os.MkdirAll(fixture.config.JobsDir, 0o755); err != nil {
