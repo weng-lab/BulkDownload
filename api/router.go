@@ -13,15 +13,21 @@ import (
 
 func NewRouter(logger *slog.Logger, manager *service.Manager, jobStore *jobs.Jobs, config appconfig.Config) http.Handler {
 	r := chi.NewRouter()
+	a := chi.NewRouter()
+
 	r.Use(newRequestLoggerMiddleware(logger))
 	r.Use(cors.AllowAll().Handler)
+
+	a.Use(adminAuth(config.AdminToken))
+
+	a.Get("/jobs", HandleAdminListJobs(jobStore))
+	a.Get("/jobs/{id}", HandleAdminGetJob(jobStore))
+	a.Delete("/jobs/{id}", HandleAdminDeleteJob(manager))
+	r.Mount("/admin", a)
 
 	r.Post("/jobs", HandleCreateJob(manager, config))
 	r.Get("/status/{id}", HandleStatus(jobStore))
 	r.Get("/download/{id}", HandleDownload(jobStore, config))
-	r.Get("/admin/jobs", HandleAdminListJobs(jobStore))
-	r.Get("/admin/jobs/{id}", HandleAdminGetJob(jobStore))
-	r.Delete("/admin/jobs/{id}", HandleAdminDeleteJob(manager))
 
 	return r
 }

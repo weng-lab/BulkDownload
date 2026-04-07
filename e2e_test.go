@@ -68,6 +68,7 @@ func testConfig(t *testing.T) appconfig.Config {
 		PublicBaseURL:   "https://download.mohd.org",
 		DownloadRootDir: "mohd_data",
 		Port:            "0",
+		AdminToken:      "test-admin-token",
 		JobTTL:          300 * time.Millisecond,
 		CleanupTick:     50 * time.Millisecond,
 	}
@@ -252,7 +253,6 @@ func TestCreateJobRejectsInvalidTarballAndScriptRequests(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -446,7 +446,6 @@ func TestCleanupRemovesExpiredJobAndArtifactForSupportedJobTypes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -499,7 +498,7 @@ func TestAdminEndpointsExposeStoredMetadataAndHideExpiredJobs(t *testing.T) {
 	zipJob := waitForDoneStatus(t, app.server.URL, zipCreated.ID)
 	scriptJob := waitForDoneStatus(t, app.server.URL, scriptCreated.ID)
 
-	resp, err := http.Get(app.server.URL + "/admin/jobs")
+	resp, err := adminGet(t, app, "/admin/jobs")
 	if err != nil {
 		t.Fatalf("get admin jobs: %v", err)
 	}
@@ -531,7 +530,7 @@ func TestAdminEndpointsExposeStoredMetadataAndHideExpiredJobs(t *testing.T) {
 		t.Fatalf("zip output size mismatch: %#v", listed[1])
 	}
 
-	detailResp, err := http.Get(app.server.URL + "/admin/jobs/" + zipCreated.ID)
+	detailResp, err := adminGet(t, app, "/admin/jobs/"+zipCreated.ID)
 	if err != nil {
 		t.Fatalf("get admin job detail: %v", err)
 	}
@@ -551,7 +550,7 @@ func TestAdminEndpointsExposeStoredMetadataAndHideExpiredJobs(t *testing.T) {
 
 	time.Sleep(config.JobTTL + 50*time.Millisecond)
 
-	expiredListResp, err := http.Get(app.server.URL + "/admin/jobs")
+	expiredListResp, err := adminGet(t, app, "/admin/jobs")
 	if err != nil {
 		t.Fatalf("get expired admin jobs: %v", err)
 	}
@@ -564,7 +563,7 @@ func TestAdminEndpointsExposeStoredMetadataAndHideExpiredJobs(t *testing.T) {
 		t.Fatalf("expected expired jobs to be hidden, got %#v", expiredListed)
 	}
 
-	expiredDetailResp, err := http.Get(app.server.URL + "/admin/jobs/" + zipCreated.ID)
+	expiredDetailResp, err := adminGet(t, app, "/admin/jobs/"+zipCreated.ID)
 	if err != nil {
 		t.Fatalf("get expired admin job detail: %v", err)
 	}
@@ -572,6 +571,28 @@ func TestAdminEndpointsExposeStoredMetadataAndHideExpiredJobs(t *testing.T) {
 	if expiredDetailResp.StatusCode != http.StatusNotFound {
 		body, _ := io.ReadAll(expiredDetailResp.Body)
 		t.Fatalf("expected expired admin job detail status %d, got %d: %s", http.StatusNotFound, expiredDetailResp.StatusCode, string(body))
+	}
+}
+
+func TestAdminEndpointsRequireAdminToken(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t, testConfig(t))
+
+	req, err := http.NewRequest(http.MethodGet, app.server.URL+"/admin/jobs", nil)
+	if err != nil {
+		t.Fatalf("build admin request: %v", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("send admin request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected admin status %d, got %d: %s", http.StatusUnauthorized, resp.StatusCode, string(body))
 	}
 }
 
@@ -596,6 +617,7 @@ func TestAdminDeleteRemovesCompletedJobAndArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build delete request: %v", err)
 	}
+	req.Header.Set("X-Admin-Token", app.config.AdminToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("delete admin job: %v", err)
@@ -606,7 +628,7 @@ func TestAdminDeleteRemovesCompletedJobAndArtifact(t *testing.T) {
 		t.Fatalf("expected delete status %d, got %d: %s", http.StatusNoContent, resp.StatusCode, string(body))
 	}
 
-	detailResp, err := http.Get(app.server.URL + "/admin/jobs/" + created.ID)
+	detailResp, err := adminGet(t, app, "/admin/jobs/"+created.ID)
 	if err != nil {
 		t.Fatalf("get deleted admin job detail: %v", err)
 	}
@@ -616,7 +638,7 @@ func TestAdminDeleteRemovesCompletedJobAndArtifact(t *testing.T) {
 		t.Fatalf("expected deleted admin job detail status %d, got %d: %s", http.StatusNotFound, detailResp.StatusCode, string(body))
 	}
 
-	listResp, err := http.Get(app.server.URL + "/admin/jobs")
+	listResp, err := adminGet(t, app, "/admin/jobs")
 	if err != nil {
 		t.Fatalf("get admin jobs after delete: %v", err)
 	}
@@ -657,6 +679,18 @@ func createJob(t *testing.T, url, body string) api.JobResponse {
 	}
 
 	return created
+}
+
+func adminGet(t *testing.T, app testApp, path string) (*http.Response, error) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodGet, app.server.URL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Admin-Token", app.config.AdminToken)
+
+	return http.DefaultClient.Do(req)
 }
 
 func waitForDoneStatus(t *testing.T, baseURL, id string) api.JobStatusResponse {

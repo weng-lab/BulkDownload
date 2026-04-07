@@ -18,7 +18,7 @@ const (
 	defaultMigrationsDir = "db/migrations"
 	atacTSVPath          = "tsv/atac.tsv"
 	atacTableName        = "samples_atac"
-	filesTSVPath         = "tsv/mohd_phase_0_download_files.tsv"
+	filesTSVPath         = "tsv/files.tsv"
 	rnaTSVPath           = "tsv/rna.tsv"
 	rnaTableName         = "samples_rna"
 	wgbsTSVPath          = "tsv/wgbs.tsv"

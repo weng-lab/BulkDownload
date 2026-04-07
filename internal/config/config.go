@@ -25,6 +25,7 @@ const (
 	envLogLevel        = "LOG_LEVEL"
 	envJobTTL          = "JOB_TTL"
 	envCleanupTick     = "CLEANUP_TICK"
+	envAdminToken      = "ADMIN_TOKEN"
 )
 
 type Config struct {
@@ -36,6 +37,7 @@ type Config struct {
 	LogLevel        string
 	JobTTL          time.Duration
 	CleanupTick     time.Duration
+	AdminToken      string
 }
 
 func defaultConfig() Config {
@@ -48,6 +50,7 @@ func defaultConfig() Config {
 		LogLevel:        "info",
 		JobTTL:          24 * time.Hour,
 		CleanupTick:     5 * time.Minute,
+		AdminToken:      "",
 	}
 }
 
@@ -73,6 +76,7 @@ func resolveConfig(env map[string]string) (Config, error) {
 	config.DownloadRootDir = resolveString(env, envDownloadRootDir, config.DownloadRootDir)
 	config.Port = resolveString(env, envPort, config.Port)
 	config.LogLevel = resolveString(env, envLogLevel, config.LogLevel)
+	config.AdminToken = resolveString(env, envAdminToken, config.AdminToken)
 
 	jobTTL, err := resolveDuration(env, config.JobTTL, envJobTTL)
 	if err != nil {
